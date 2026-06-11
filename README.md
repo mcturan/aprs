@@ -77,3 +77,42 @@ Sihirbaz esnasında:
 Servis ilk paketi gönderdikten sonra, istasyonunuzu canlı olarak [aprs.fi](https://aprs.fi/) üzerinden takip edebilirsiniz:
 
 👉 `https://aprs.fi/#!call=a%2F<ÇAGRI_İŞARETİNİZ>` (Örn: `https://aprs.fi/#!call=a%2FN0CALL-9`)
+
+---
+
+## 🗑️ Tamamen Kaldırma (Uninstall)
+
+Uygulamayı, arka plan servislerini, zamanlanmış görevleri ve tüm yapılandırma/günlük dosyalarını sisteminizden tamamen temizlemek için aşağıdaki adımları uygulayabilirsiniz:
+
+### 🐧 Linux (Tek Komutla Kaldırma)
+Aşağıdaki komutu terminale yapıştırarak tüm servisleri durdurup uygulamayı silebilirsiniz:
+```bash
+systemctl --user stop aprs-beacon.service 2>/dev/null
+systemctl --user disable aprs-beacon.service 2>/dev/null
+rm -f ~/.config/systemd/user/aprs-beacon.service
+systemctl --user daemon-reload
+rm -rf ~/.aprs-beacon
+```
+
+---
+
+### 💻 Windows (PowerShell ile Kaldırma)
+**PowerShell** ekranında aşağıdaki komutları sırasıyla çalıştırarak zamanlanmış görevi kaldırıp dosyaları temizleyebilirsiniz:
+```powershell
+Stop-ScheduledTask -TaskName "APRSBeacon" -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "APRSBeacon" -Confirm:$false -ErrorAction SilentlyContinue
+Remove-Item -Path "$env:USERPROFILE\.aprs-beacon" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+### 📱 Android / Termux (Kaldırma)
+Termux ekranında aşağıdaki komutları çalıştırarak arka plan işlemlerini durdurup başlangıç scriptlerini silebilirsiniz:
+```bash
+pkill -f aprs_beacon.py
+rm -f ~/.termux/boot/aprs-beacon
+rm -rf ~/.aprs-beacon
+pkg uninstall termux-api -y
+```
+*(İsteğe bağlı olarak telefonunuzun ana ekranından **Termux**, **Termux:API** ve **Termux:Boot** uygulamalarını silebilirsiniz).*
+
