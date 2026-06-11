@@ -102,38 +102,29 @@ Windows üzerinde bu beacon'ı arka planda konsol penceresi açılmadan (sessizc
 
 ---
 
-## 📱 Android Kurulumu (Termux veya APRSdroid)
+## 📱 Android Kurulumu (APRSdroid - En Güvenilir Yöntem)
 
-### Yöntem A: Termux (Canlı GPS & Tam Arka Plan)
-Android telefonunuzun dahili GPS'ini kullanarak arka planda konumunuzu otomatik güncelleyen ve tamamen otomatik çalışan bir servis kurmak için:
+Android'in sıkı güvenlik yapısı ve pil tasarrufu kısıtlamaları (Doze Mode) nedeniyle, Termux gibi terminal emülatörleri arka planda uzun süre aktif kalamaz ve GPS uydularına erişimi kısıtlanır. Android'de servisin **bilgisayardaki gibi arka planda görünmez şekilde** ve cihaz açıldığında otomatik başlamasını sağlamanın en sağlıklı yolu native **APRSdroid** uygulamasıdır.
 
-1. F-Droid üzerinden **Termux** ve **Termux:API** uygulamalarını indirin (İki uygulamanın da aynı mağazadan (F-Droid) yüklenmiş olması çakışmaları önlemek için zorunludur).
-2. Telefonunuzun Ayarlarından Termux uygulamasına **"Konum (Her zaman izin ver)"** yetkisi verin.
-3. Termux uygulamasını açıp gerekli paketleri yükleyin:
-   ```bash
-   pkg update
-   pkg install python git termux-api
-   ```
-4. Depoyu klonlayın ve kurulum sihirbazını başlatın:
-   ```bash
-   git clone https://github.com/mcturan/aprs.git
-   cd aprs
-   chmod +x install.sh aprs_beacon.py
-   ./install.sh
-   ```
-5. Sihirbaz esnasında `"Android cihazınızın canlı GPS konumunu kullanmak ister misiniz?"` sorusuna `Evet` deyin.
-6. Kurulum tamamlandıktan sonra arka planda sessizce çalıştırmak için:
-   ```bash
-   nohup python aprs_beacon.py > /dev/null 2>&1 &
-   ```
-   *Not: Android'in arka planda Termux'u kapatmasını engellemek için Termux bildirim çubuğundaki **"Acquire Wakelock"** seçeneğini aktif etmelisiniz.*
+APRSdroid'i her seferinde manuel açmak zorunda kalmamak ve arka planda sürekli çalışmasını sağlamak için şu adımları uygulayın:
 
+### 1. APRSdroid Kurulumu
+1. [APRSdroid Resmi Web Sitesi](https://aprsdroid.org/) üzerinden uygulamanın `.apk` sürümünü indirin ve kurun.
+2. Ayarlardan Çağrı İşaretinizi (`N0CALL-9`) ve Passcode'unuzu girin. Bağlantı protokolünü **APRS-IS** yapın.
 
-### Yöntem B: APRSdroid (Önerilen Yerel Uygulama)
-Telefonlar hareketli cihazlar olduğu için sabit koordinat gönderen bir script yerine, telefonun dahili GPS alıcısını kullanarak gerçek zamanlı konum takibi yapan yerel bir uygulama kullanmak çok daha pratiktir.
-1. [APRSdroid Resmi Web Sitesi](https://aprsdroid.org/) üzerinden uygulamanın `.apk` sürümünü indirin.
-2. Uygulama ayarlarından çağrı işaretinizi ve passcode'unuzu girin.
-3. Bağlantı türünü "APRS-IS" olarak seçip başlatın. Uygulama arka planda telefon hareket ettikçe GPS konumunu otomatik güncelleyecektir.
+### 2. Cihaz Başlangıcında Otomatik Çalıştırma (Start on Boot)
+APRSdroid'in telefon her açıldığında arka planda otomatik çalışmaya başlaması için:
+- **APRSdroid Ayarları > Connection preferences** sekmesine gidin.
+- **Start on Boot** (Cihaz açılışında başlat) seçeneğini işaretleyin.
+
+### 3. Pil Kısıtlamalarını Kaldırma (Çok Önemli!)
+Android'in arka plandaki servisleri kapatmasını engellemek için:
+- Telefonunuzun **Ayarlar > Uygulamalar > APRSdroid > Pil** (veya Güç Kullanımı) menüsüne gidin.
+- Pil modunu **"Kısıtlamasız" (Unrestricted / Optimize Etme)** olarak ayarlayın.
+- Cihazınız Xiaomi/Huawei/Samsung ise, "Otomatik Başlatma" (Auto-start / App Launch) iznini APRSdroid için aktif edin.
+
+*Bu ayarları yaptığınızda APRSdroid telefonunuz açıldığında arka planda bir servis (Foreground Service) olarak otomatik başlayacak ve siz uygulamayı açmasanız dahi GPS konumunuzu haritada güncel tutacaktır.*
+
 
 ---
 
