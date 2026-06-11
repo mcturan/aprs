@@ -15,16 +15,23 @@ echo "   _   ___  ___  ___   ___                             "
 echo "  /_\ | _ \| _ \/ __| | _ ) ___ __ _ __ ___ _ _        "
 echo " / _ \|  _/|   /\__ \ | _ \/ -_) _\` / _/ _ \ ' \       "
 echo "/_/ \_\_|  |_|_\|___/ |___/\___\__,_\__\___/_||_|      "
-echo -e "       Linux APRS Beacon İnteraktif Kurulum Sihirbazı${C_RESET}\n"
+echo -e "       APRS Arka Plan Beacon İnteraktif Kurulum Sihirbazı${C_RESET}\n"
 echo "----------------------------------------------------------------"
-echo "Bu sihirbaz, APRS beacon'ınızı yapılandıracak ve arka planda"
+echo "Bu sihirbaz, APRS beacon'ınızı kuracak ve arka planda"
 echo "sessizce çalışması için gerekli tanımları yapacaktır."
 echo "----------------------------------------------------------------\n"
 
-# Python3 kontrolü
+# Python3 kontrolü ve kurulumu
 if ! command -v python3 &> /dev/null; then
-    echo -e "${C_RED}[!] Hata: Sistemde Python3 bulunamadı. Lütfen yükleyin.${C_RESET}"
-    exit 1
+    echo -e "${C_YELLOW}[!] Sistemde Python3 bulunamadı. Kuruluyor...${C_RESET}"
+    if command -v pkg &> /dev/null; then
+        pkg update -y && pkg install -y python
+    elif command -v apt-get &> /dev/null; then
+        sudo apt-get update && sudo apt-get install -y python3
+    else
+        echo -e "${C_RED}[!] Hata: Python3 otomatik kurulamadı. Lütfen manuel kurun.${C_RESET}"
+        exit 1
+    fi
 fi
 
 INSTALL_DIR="$HOME/.aprs-beacon"
@@ -34,6 +41,68 @@ IS_ANDROID=false
 if [ -n "$TERMUX_VERSION" ] || [ "$(uname -o 2>/dev/null)" = "Android" ]; then
     IS_ANDROID=true
 fi
+
+# ==========================================
+# ANDROID / TERMUX BARK PLAN AYARLARI VE OTOMASYONU
+# ==========================================
+USE_TERMUX_GPS=false
+if [ "$IS_ANDROID" = true ]; then
+    echo -e "${C_BLUE}[i] Android/Termux ortamı tespit edildi. Gerekli araçlar kontrol ediliyor...${C_RESET}"
+    
+    # 1. termux-api pkg paketini kur
+    if ! dpkg -s termux-api &>/dev/null; then
+        echo -e "${C_YELLOW}[!] termux-api CLI paketi kuruluyor...${C_RESET}"
+        pkg install -y termux-api
+    fi
+    
+    # 2. Termux:API Companion Android Uygulaması Kontrolü
+    # termux-location komutunu deneyerek companion app'in kurulu olup olmadığını kontrol et
+    termux-location -p network -last &>/dev/null
+    if [ $? -ne 0 ]; then
+        echo -e "${C_YELLOW}[!] Termux:API companion uygulaması eksik görünüyor.${C_RESET}"
+        read -p "Termux:API uygulamasını otomatik indirip kurmak ister misiniz? [Y/n]: " INSTALL_API_APP
+        INSTALL_API_APP=$(echo "$INSTALL_API_APP" | tr 'A-Z' 'a-z' | xargs)
+        if [ "$INSTALL_API_APP" != "n" ]; then
+            echo -e "${C_BLUE}[i] Termux:API APK indiriliyor (F-Droid)...${C_RESET}"
+            curl -L -o "$INSTALL_DIR/termux-api.apk" https://f-droid.org/repo/com.termux.api_51.apk
+            echo -e "${C_GREEN}[+] İndirme başarılı. Lütfen açılan ekrandan Yükle (Install) butonuna basın.${C_RESET}"
+            termux-open "$INSTALL_DIR/termux-api.apk"
+            echo "Devam etmek için uygulamanın kurulmasını bekleyin ve buraya dönün."
+            read -p "Uygulama kurulduysa Enter tuşuna basın..."
+        fi
+    fi
+    
+    # 3. Termux:Boot Android Uygulaması Kontrolü
+    read -p "Cihaz her açıldığında arka planda otomatik başlaması için Termux:Boot kurulsun mu? [Y/n]: " INSTALL_BOOT_APP
+    INSTALL_BOOT_APP=$(echo "$INSTALL_BOOT_APP" | tr 'A-Z' 'a-z' | xargs)
+    if [ "$INSTALL_BOOT_APP" != "n" ]; then
+        echo -e "${C_BLUE}[i] Termux:Boot APK indiriliyor (F-Droid)...${C_RESET}"
+        curl -L -o "$INSTALL_DIR/termux-boot.apk" https://f-droid.org/repo/com.termux.boot_7.apk
+        echo -e "${C_GREEN}[+] İndirme başarılı. Lütfen açılan ekrandan Yükle (Install) butonuna basın.${C_RESET}"
+        termux-open "$INSTALL_DIR/termux-boot.apk"
+        echo "Devam etmek için uygulamanın kurulmasını bekleyin ve buraya dönün."
+        read -p "Uygulama kurulduysa Enter tuşuna basın..."
+    fi
+    
+    # 4. Konum izinlerini tetikleme
+    echo -e "${C_BLUE}[i] Telefondan GPS yetkisini tetiklemek için konum sorgulanıyor...${C_RESET}"
+    echo -e "${C_YELLOW}[!] Lütfen telefon ekranında konum izni pop-up'ı çıkarsa 'Her zaman izin ver' seçeneğini işaretleyin.${C_RESET}"
+    termux-location -p gps -last &>/dev/null
+    
+    # Canlı GPS kullanım seçimi
+    read -p "Android cihazınızın canlı GPS konumunu kullanmak ister misiniz? [Y/n]: " TERMUX_GPS_CHOICE
+    TERMUX_GPS_CHOICE=$(echo "$TERMUX_GPS_CHOICE" | tr 'A-Z' 'a-z' | xargs)
+    if [ "$TERMUX_GPS_CHOICE" != "n" ]; then
+        USE_TERMUX_GPS=true
+        LATITUDE="0.0"
+        LONGITUDE="0.0"
+        echo -e "${C_GREEN}[+] Canlı GPS konumu aktif edildi. Arka planda telefondan anlık konum alınacaktır.${C_RESET}"
+    fi
+fi
+
+# ==========================================
+# ORTAK YAPILANDIRMA SORULARI
+# ==========================================
 
 # 1. Çağrı İşareti
 while true; do
@@ -98,23 +167,7 @@ case "$SYM_CHOICE" in
     *) SYMBOL_CODE="X" ;;
 esac
 
-# 5. Konum (Location)
-echo -e "\n5. Konum ayarları:"
-USE_TERMUX_GPS=false
-LATITUDE=""
-LONGITUDE=""
-
-if [ "$IS_ANDROID" = true ]; then
-    read -p "Android cihazınızın canlı GPS konumunu kullanmak ister misiniz? (Termux:API gerektirir) [Y/n]: " TERMUX_GPS_CHOICE
-    TERMUX_GPS_CHOICE=$(echo "$TERMUX_GPS_CHOICE" | tr 'A-Z' 'a-z' | xargs)
-    if [ "$TERMUX_GPS_CHOICE" != "n" ]; then
-        USE_TERMUX_GPS=true
-        LATITUDE="0.0"
-        LONGITUDE="0.0"
-        echo -e "${C_GREEN}[+] Canlı GPS konumu aktif edildi. Arka planda telefondan anlık konum alınacaktır.${C_RESET}"
-    fi
-fi
-
+# 5. Konum (Sadece Canlı GPS seçilmediyse sorulur)
 if [ "$USE_TERMUX_GPS" = false ]; then
     read -p "Sistem konumunuzu internet üzerinden otomatik tespit etsin mi? [Y/n]: " AUTO_LOC
     AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
@@ -234,24 +287,33 @@ EOF
         chmod +x "$BOOT_DIR/start-aprs.sh"
         echo -e "${C_GREEN}[+] Otomatik başlangıç betiği oluşturuldu: $BOOT_DIR/start-aprs.sh${C_RESET}"
         
+        # Temizlik
+        rm -f "$INSTALL_DIR/termux-api.apk" "$INSTALL_DIR/termux-boot.apk"
+        
         echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}           APRS ANDROID ARKA PLAN SERVİSİ YAPILANDIRILDI!${C_RESET}"
+        echo -e "${C_GREEN}${C_BOLD}           APRS ANDROID ARKA PLAN SERVİSİ BAŞARIYLA KURULDU!${C_RESET}"
         echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
         echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
-        echo -e "${C_BOLD}Konum          :${C_RESET} GPS Canlı Konum (Termux:API)"
+        if [ "$USE_TERMUX_GPS" = true ]; then
+            echo -e "${C_BOLD}Konum          :${C_RESET} Android Donanım GPS (Dinamik)"
+        else
+            echo -e "${C_BOLD}Konum          :${C_RESET} Enlem=$LATITUDE, Boylam=$LONGITUDE (Statik)"
+        fi
         echo -e "${C_BOLD}Gönderim Sıklığı:${C_RESET} $INTERVAL_MINUTES dakikada bir"
         echo -e "${C_BOLD}Durum          :${C_RESET} Cihaz başladığında arka planda otomatik çalışacak."
         echo -e "----------------------------------------------------------------"
-        echo -e "${C_YELLOW}ÖNEMLİ - Telefonunuzda Yapmanız Gereken Ayarlar:${C_RESET}"
-        echo -e "1. F-Droid'den ${C_BOLD}Termux:Boot${C_RESET} uygulamasını telefonunuza indirin."
-        echo -e "2. ${C_BOLD}Termux:Boot${C_RESET} uygulamasını cihazınızda bir kez açın (Android tetikleyicisi için gereklidir)."
-        echo -e "3. Telefon Ayarları > Uygulamalar > Termux ve Termux:Boot için ${C_BOLD}Pil Kısıtlamasını Kaldırın (Kısıtlamasız / Optimize Etme)${C_RESET}."
-        echo -e "4. Termux bildirim panelinden ${C_BOLD}Acquire Wakelock${C_RESET} butonuna basarak uykuyu engelleyin."
-        echo -e "5. Termux içinde şu paketin kurulu olduğundan emin olun: ${C_BOLD}pkg install termux-api${C_RESET}"
+        echo -e "${C_YELLOW}Kalan Son Adımlar (Lütfen bunları telefonda uygulayın):${C_RESET}"
+        echo -e "1. ${C_BOLD}Termux:Boot${C_RESET} uygulamasını telefonunuzda bir kez açın (yetkilendirme için zorunludur)."
+        echo -e "2. Telefon Ayarları > Uygulamalar > ${C_BOLD}Termux${C_RESET} ve ${C_BOLD}Termux:Boot${C_RESET} için"
+        echo -e "   ${C_BOLD}Pil Kısıtlamasını Kaldırın (Kısıtlamasız / Optimize Etme)${C_RESET}."
+        echo -e "3. Termux bildirim panelinden ${C_BOLD}Acquire Wakelock${C_RESET} butonuna basarak uykuyu engelleyin."
         echo -e "----------------------------------------------------------------"
         echo -e "Şu anda arka planda manuel başlatmak için:"
         echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
         echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
+        
+        # Start immediately
+        nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &
     else
         echo -e "${C_YELLOW}[!] Otomatik başlangıç kurulmadı. Manuel arka planda başlatmak için:${C_RESET}"
         echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
@@ -288,7 +350,7 @@ EOF
         echo -e "${C_BLUE}[i] Servis otomatik başlatılacak şekilde yapılandırılıyor...${C_RESET}"
         systemctl --user daemon-reload
         systemctl --user enable aprs-beacon.service
-        systemctl --user start aprs-beacon.service
+        systemctl --user restart aprs-beacon.service
         loginctl enable-linger "$USER" 2>/dev/null
         
         echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
