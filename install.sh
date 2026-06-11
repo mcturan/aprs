@@ -15,18 +15,16 @@ echo "   _   ___  ___  ___   ___                             "
 echo "  /_\ | _ \| _ \/ __| | _ ) ___ __ _ __ ___ _ _        "
 echo " / _ \|  _/|   /\__ \ | _ \/ -_) _\` / _/ _ \ ' \       "
 echo "/_/ \_\_|  |_|_\|___/ |___/\___\__,_\__\___/_||_|      "
-echo -e "       APRS Arka Plan Beacon İnteraktif Kurulum Sihirbazı${C_RESET}\n"
+echo -e "       Linux APRS Beacon İnteraktif Kurulum Sihirbazı${C_RESET}\n"
 echo "----------------------------------------------------------------"
-echo "Bu sihirbaz, APRS beacon'ınızı kuracak ve arka planda"
-echo "sessizce çalışması için gerekli tanımları yapacaktır."
+echo "Bu sihirbaz, APRS beacon'ınızı Linux üzerinde arka planda"
+echo "systemd servisi olarak kuracak ve otomatik başlatacaktır."
 echo "----------------------------------------------------------------\n"
 
 # Python3 kontrolü ve kurulumu
 if ! command -v python3 &> /dev/null; then
     echo -e "${C_YELLOW}[!] Sistemde Python3 bulunamadı. Kuruluyor...${C_RESET}"
-    if command -v pkg &> /dev/null; then
-        pkg update -y && pkg install -y python
-    elif command -v apt-get &> /dev/null; then
+    if command -v apt-get &> /dev/null; then
         sudo apt-get update && sudo apt-get install -y python3
     else
         echo -e "${C_RED}[!] Hata: Python3 otomatik kurulamadı. Lütfen manuel kurun.${C_RESET}"
@@ -36,72 +34,6 @@ fi
 
 INSTALL_DIR="$HOME/.aprs-beacon"
 mkdir -p "$INSTALL_DIR"
-
-IS_ANDROID=false
-if [ -n "$TERMUX_VERSION" ] || [ "$(uname -o 2>/dev/null)" = "Android" ]; then
-    IS_ANDROID=true
-fi
-
-# ==========================================
-# ANDROID / TERMUX BARK PLAN AYARLARI VE OTOMASYONU
-# ==========================================
-USE_TERMUX_GPS=false
-if [ "$IS_ANDROID" = true ]; then
-    echo -e "${C_BLUE}[i] Android/Termux ortamı tespit edildi. Gerekli araçlar kontrol ediliyor...${C_RESET}"
-    
-    # 1. termux-api pkg paketini kur
-    if ! dpkg -s termux-api &>/dev/null; then
-        echo -e "${C_YELLOW}[!] termux-api CLI paketi kuruluyor...${C_RESET}"
-        pkg install -y termux-api
-    fi
-    
-    # 2. Termux:API Companion Android Uygulaması Kontrolü
-    # termux-location komutunu deneyerek companion app'in kurulu olup olmadığını kontrol et
-    termux-location -p network -last &>/dev/null
-    if [ $? -ne 0 ]; then
-        echo -e "${C_YELLOW}[!] Termux:API companion uygulaması eksik görünüyor.${C_RESET}"
-        read -p "Termux:API uygulamasını otomatik indirip kurmak ister misiniz? [Y/n]: " INSTALL_API_APP
-        INSTALL_API_APP=$(echo "$INSTALL_API_APP" | tr 'A-Z' 'a-z' | xargs)
-        if [ "$INSTALL_API_APP" != "n" ]; then
-            echo -e "${C_BLUE}[i] Termux:API APK indiriliyor (F-Droid)...${C_RESET}"
-            curl -L -o "$INSTALL_DIR/termux-api.apk" https://f-droid.org/repo/com.termux.api_51.apk
-            echo -e "${C_GREEN}[+] İndirme başarılı. Lütfen açılan ekrandan Yükle (Install) butonuna basın.${C_RESET}"
-            termux-open "$INSTALL_DIR/termux-api.apk"
-            echo "Devam etmek için uygulamanın kurulmasını bekleyin ve buraya dönün."
-            read -p "Uygulama kurulduysa Enter tuşuna basın..."
-        fi
-    fi
-    
-    # 3. Termux:Boot Android Uygulaması Kontrolü
-    read -p "Cihaz her açıldığında arka planda otomatik başlaması için Termux:Boot kurulsun mu? [Y/n]: " INSTALL_BOOT_APP
-    INSTALL_BOOT_APP=$(echo "$INSTALL_BOOT_APP" | tr 'A-Z' 'a-z' | xargs)
-    if [ "$INSTALL_BOOT_APP" != "n" ]; then
-        echo -e "${C_BLUE}[i] Termux:Boot APK indiriliyor (F-Droid)...${C_RESET}"
-        curl -L -o "$INSTALL_DIR/termux-boot.apk" https://f-droid.org/repo/com.termux.boot_7.apk
-        echo -e "${C_GREEN}[+] İndirme başarılı. Lütfen açılan ekrandan Yükle (Install) butonuna basın.${C_RESET}"
-        termux-open "$INSTALL_DIR/termux-boot.apk"
-        echo "Devam etmek için uygulamanın kurulmasını bekleyin ve buraya dönün."
-        read -p "Uygulama kurulduysa Enter tuşuna basın..."
-    fi
-    
-    # 4. Konum izinlerini tetikleme
-    echo -e "${C_BLUE}[i] Telefondan GPS yetkisini tetiklemek için konum sorgulanıyor...${C_RESET}"
-    echo -e "${C_YELLOW}[!] Lütfen telefon ekranında konum izni pop-up'ı çıkarsa 'Her zaman izin ver' seçeneğini işaretleyin.${C_RESET}"
-    termux-location -p network -last &>/dev/null
-    
-    # Canlı GPS kullanım seçimi
-    read -p "Android cihazınızın canlı GPS konumunu kullanmak ister misiniz? [Y/n]: " TERMUX_GPS_CHOICE
-    TERMUX_GPS_CHOICE=$(echo "$TERMUX_GPS_CHOICE" | tr 'A-Z' 'a-z' | xargs)
-    if [ "$TERMUX_GPS_CHOICE" != "n" ]; then
-        USE_TERMUX_GPS=true
-        echo -e "${C_GREEN}[+] Canlı GPS konumu aktif edildi. Arka planda telefondan anlık konum alınacaktır.${C_RESET}"
-        echo -e "${C_YELLOW}[!] Not: Canlı GPS'in çekmediği anlar için bir yedek (yedek/statik) konum ayarlayacağız.${C_RESET}"
-    fi
-fi
-
-# ==========================================
-# ORTAK YAPILANDIRMA SORULARI
-# ==========================================
 
 # 1. Çağrı İşareti
 while true; do
@@ -166,11 +98,11 @@ case "$SYM_CHOICE" in
     *) SYMBOL_CODE="X" ;;
 esac
 
-# 5. Konum (Canlı GPS seçilmiş olsa dahi yedek olarak sorulur)
+# 5. Konum
 LATITUDE=""
 LONGITUDE=""
 
-read -p "Sistem yedek/statik konumunuzu internet üzerinden otomatik tespit etsin mi? [Y/n]: " AUTO_LOC
+read -p "5. Sistem konumunuzu internet üzerinden otomatik tespit etsin mi? [Y/n]: " AUTO_LOC
 AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
 
 if [ "$AUTO_LOC" != "n" ]; then
@@ -247,7 +179,7 @@ cat <<EOF > "$INSTALL_DIR/config.json"
     "passcode": $PASSCODE,
     "latitude": $LATITUDE,
     "longitude": $LONGITUDE,
-    "use_termux_gps": $USE_TERMUX_GPS,
+    "use_termux_gps": false,
     "symbol_table": "$SYMBOL_TABLE",
     "symbol_code": "$SYMBOL_CODE",
     "comment": "$COMMENT",
@@ -275,7 +207,7 @@ if [ $? -eq 0 ]; then
     echo -e "${C_GREEN}[+] Test Başarılı! Konum paketi APRS-IS ağına iletildi.${C_RESET}"
 else
     echo -e "${C_RED}[!] Test Başarısız! Paket sunucuya ulaştırılamadı.${C_RESET}"
-    echo -e "${C_YELLOW}[i] İnternet bağlantınızı veya konum yetkilerinizi kontrol edin.${C_RESET}"
+    echo -e "${C_YELLOW}[i] İnternet bağlantınızı kontrol edin.${C_RESET}"
     echo -e "${C_YELLOW}[i] Detaylar için: cat $INSTALL_DIR/aprs_beacon.log${C_RESET}"
     read -p "Yine de devam etmek istiyor musunuz? [y/N]: " PROCEED
     PROCEED=$(echo "$PROCEED" | tr 'A-Z' 'a-z' | xargs)
@@ -285,69 +217,15 @@ else
     fi
 fi
 
-# Systemd veya Android Başlangıç Kurulumu
-if [ "$IS_ANDROID" = true ]; then
-    # Android'de uykuyu engellemek için wake lock al
-    termux-wake-lock
-    
-    echo -e "\n${C_CYAN}6. Android Otomatik Başlangıç Ayarları:${C_RESET}"
-    read -p "Cihaz her açıldığında arka planda otomatik başlasın mı? [Y/n]: " TERMUX_AUTO
-    TERMUX_AUTO=$(echo "$TERMUX_AUTO" | tr 'A-Z' 'a-z' | xargs)
-    
-    if [ "$TERMUX_AUTO" != "n" ]; then
-        BOOT_DIR="$HOME/.termux/boot"
-        mkdir -p "$BOOT_DIR"
-        
-        # Termux:Boot başlangıç betiğini yaz
-        cat <<EOF > "$BOOT_DIR/start-aprs.sh"
-#!/usr/bin/env bash
-termux-wake-lock
-python3 $INSTALL_DIR/aprs_beacon.py &
-EOF
-        chmod +x "$BOOT_DIR/start-aprs.sh"
-        echo -e "${C_GREEN}[+] Otomatik başlangıç betiği oluşturuldu: $BOOT_DIR/start-aprs.sh${C_RESET}"
-        
-        # Temizlik
-        rm -f "$INSTALL_DIR/termux-api.apk" "$INSTALL_DIR/termux-boot.apk"
-        
-        echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}           APRS ANDROID ARKA PLAN SERVİSİ BAŞARIYLA KURULDU!${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
-        if [ "$USE_TERMUX_GPS" = true ]; then
-            echo -e "${C_BOLD}Konum          :${C_RESET} Android Donanım GPS (Dinamik) [Yedek: Enlem=$LATITUDE, Boylam=$LONGITUDE]"
-        else
-            echo -e "${C_BOLD}Konum          :${C_RESET} Enlem=$LATITUDE, Boylam=$LONGITUDE (Statik)"
-        fi
-        echo -e "${C_BOLD}Gönderim Sıklığı:${C_RESET} $INTERVAL_MINUTES dakikada bir"
-        echo -e "${C_BOLD}Durum          :${C_RESET} Cihaz başladığında arka planda otomatik çalışacak."
-        echo -e "----------------------------------------------------------------"
-        echo -e "${C_YELLOW}Kalan Son Adımlar (Lütfen bunları telefonda uygulayın):${C_RESET}"
-        echo -e "1. ${C_BOLD}Termux:Boot${C_RESET} uygulamasını telefonunuzda bir kez açın (yetkilendirme için zorunludur)."
-        echo -e "2. Telefon Ayarları > Uygulamalar > ${C_BOLD}Termux${C_RESET} ve ${C_BOLD}Termux:Boot${C_RESET} için"
-        echo -e "   ${C_BOLD}Pil Kısıtlamasını Kaldırın (Kısıtlamasız / Optimize Etme)${C_RESET}."
-        echo -e "3. Termux bildirim panelinden ${C_BOLD}Acquire Wakelock${C_RESET} butonuna basarak uykuyu engelleyin."
-        echo -e "----------------------------------------------------------------"
-        echo -e "Şu anda arka planda manuel başlatmak için:"
-        echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
-        
-        # Start immediately
-        nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &
-    else
-        echo -e "${C_YELLOW}[!] Otomatik başlangıç kurulmadı. Manuel arka planda başlatmak için:${C_RESET}"
-        echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
-    fi
-else
-    # Linux systemd işlemleri
-    echo -e "\n6. Başlangıç ayarları:"
-    read -p "Sistem açılışında otomatik başlasın mı? [Y/n]: " AUTO_START
-    AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
+# Linux systemd işlemleri
+echo -e "\n7. Başlangıç ayarları:"
+read -p "Sistem açılışında otomatik başlasın mı? [Y/n]: " AUTO_START
+AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
 
-    SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-    mkdir -p "$SYSTEMD_USER_DIR"
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_USER_DIR"
 
-    cat <<EOF > "$SYSTEMD_USER_DIR/aprs-beacon.service"
+cat <<EOF > "$SYSTEMD_USER_DIR/aprs-beacon.service"
 [Unit]
 Description=APRS Background Beacon Service
 After=network-online.target
@@ -364,32 +242,31 @@ WorkingDirectory=$INSTALL_DIR
 WantedBy=default.target
 EOF
 
-    echo -e "${C_GREEN}[+] Systemd servis dosyası oluşturuldu: $SYSTEMD_USER_DIR/aprs-beacon.service${C_RESET}"
+echo -e "${C_GREEN}[+] Systemd servis dosyası oluşturuldu: $SYSTEMD_USER_DIR/aprs-beacon.service${C_RESET}"
 
-    if [ "$AUTO_START" != "n" ]; then
-        echo -e "${C_BLUE}[i] Servis otomatik başlatılacak şekilde yapılandırılıyor...${C_RESET}"
-        systemctl --user daemon-reload
-        systemctl --user enable aprs-beacon.service
-        systemctl --user restart aprs-beacon.service
-        loginctl enable-linger "$USER" 2>/dev/null
-        
-        echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}           APRS ARKA PLAN SERVİSİ BAŞARIYLA AKTİF EDİLDİ!${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
-        echo -e "${C_BOLD}Konum          :${C_RESET} Enlem=$LATITUDE, Boylam=$LONGITUDE"
-        echo -e "${C_BOLD}Simge          :${C_RESET} $SYMBOL_TABLE$SYMBOL_CODE"
-        echo -e "${C_BOLD}Mesaj          :${C_RESET} $COMMENT"
-        echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
-        echo -e "${C_BOLD}Durum          :${C_RESET} Arka planda çalışıyor (Systemd)"
-        echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Bilgisayar açılışında otomatik başlayacak (Linger: Aktif)"
-        echo -e "----------------------------------------------------------------"
-        echo -e "${C_CYAN}Canlı log takibi:${C_RESET}             journalctl --user -u aprs-beacon -f"
-        echo -e "${C_CYAN}Servisi durdur:${C_RESET}              systemctl --user stop aprs-beacon"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
-    else
-        echo -e "${C_YELLOW}[!] Servis otomatik başlatılmadı.${C_RESET}"
-        echo -e "Dilediğiniz zaman manuel başlatmak için:"
-        echo -e "  systemctl --user start aprs-beacon.service"
-    fi
+if [ "$AUTO_START" != "n" ]; then
+    echo -e "${C_BLUE}[i] Servis otomatik başlatılacak şekilde yapılandırılıyor...${C_RESET}"
+    systemctl --user daemon-reload
+    systemctl --user enable aprs-beacon.service
+    systemctl --user restart aprs-beacon.service
+    loginctl enable-linger "$USER" 2>/dev/null
+    
+    echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
+    echo -e "${C_GREEN}${C_BOLD}           APRS ARKA PLAN SERVİSİ BAŞARIYLA AKTİF EDİLDİ!${C_RESET}"
+    echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
+    echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
+    echo -e "${C_BOLD}Konum          :${C_RESET} Enlem=$LATITUDE, Boylam=$LONGITUDE"
+    echo -e "${C_BOLD}Simge          :${C_RESET} $SYMBOL_TABLE$SYMBOL_CODE"
+    echo -e "${C_BOLD}Mesaj          :${C_RESET} $COMMENT"
+    echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
+    echo -e "${C_BOLD}Durum          :${C_RESET} Arka planda çalışıyor (Systemd)"
+    echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Bilgisayar açılışında otomatik başlayacak (Linger: Aktif)"
+    echo -e "----------------------------------------------------------------"
+    echo -e "${C_CYAN}Canlı log takibi:${C_RESET}             journalctl --user -u aprs-beacon -f"
+    echo -e "${C_CYAN}Servisi durdur:${C_RESET}              systemctl --user stop aprs-beacon"
+    echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
+else
+    echo -e "${C_YELLOW}[!] Servis otomatik başlatılmadı.${C_RESET}"
+    echo -e "Dilediğiniz zaman manuel başlatmak için:"
+    echo -e "  systemctl --user start aprs-beacon.service"
 fi

@@ -100,36 +100,12 @@ Windows üzerinde bu beacon'ı arka planda konsol penceresi açılmadan (sessizc
    - Başlat: `Start-ScheduledTask -TaskName 'APRSBeacon'`
    - Durdur: `Stop-ScheduledTask -TaskName 'APRSBeacon'`
 
----
+## 📱 Android İçin Alternatif Öneri (APRSdroid)
 
-## 📱 Android Kurulumu (Görünmez Arka Plan Servisi - Termux:Boot)
+Android'in sıkı güvenlik yapısı ve arka plan kısıtlamaları (Doze Mode) nedeniyle, bu tür komut satırı tabanlı betikleri telefonda çalıştırmak oldukça zahmetlidir. 
 
-Android telefonunuzda görsel bir uygulama açmak zorunda kalmadan, telefon açıldığında arka planda tamamen sessizce (başlangıçta otomatik olarak) başlayacak ve **"Son Uygulamalar" (Recents) ekranında görünmeyeceği için yanlışlıkla kapatılamayacak** bir yapı kurmak için:
+Android cihazlarda konumunuzu arka planda otomatik güncelleyerek göndermek ve harita/mesajlaşma özelliklerini kullanmak için doğrudan resmi **[APRSdroid](https://aprsdroid.org/)** uygulamasını kullanmanız önerilir. Uygulama ayarlarından "Start on Boot" seçeneğini aktif edip pil kısıtlamasını "Kısıtlamasız" yaptığınızda telefon açıldığında otomatik olarak arka planda çalışmaya başlayacaktır.
 
-### 1. Sihirbazı Çalıştırma
-Termux uygulamasını açın ve doğrudan aşağıdaki komutları yapıştırarak sihirbazı başlatın:
-```bash
-git clone https://github.com/mcturan/aprs.git
-cd aprs
-chmod +x install.sh aprs_beacon.py
-./install.sh
-```
-
-### 2. Sihirbazın Yönlendirmesiyle Kurulum
-- Sihirbaz, **Termux:API** ve **Termux:Boot** companion uygulamalarının telefonunuzda kurulu olup olmadığını kontrol eder. 
-- Eksikse, APK dosyalarını otomatik olarak F-Droid deposundan çeker ve Android'in uygulama yükleme ekranını açar. Sizin tek yapmanız gereken **"Yükle" (Install)** butonuna dokunmaktır.
-- Sihirbaz, telefonun GPS izin penceresini otomatik tetikler. **"Konum (Her zaman izin ver)"** seçeneğini işaretleyin.
-- Sihirbazda `"Android cihazınızın canlı GPS konumunu kullanmak ister misiniz?"` sorusuna `Evet` deyin.
-- `"Cihaz her açıldığında otomatik başlasın mı?"` sorusuna `Evet` deyin.
-
-### 3. Kalıcılık Ayarları (Çok Önemli!)
-Android'in servisi uyutmasını engellemek için şu 3 adımı yapın:
-1. **Termux:Boot** uygulamasını telefonda bir kez açıp kapatın (Android tetikleyicisi için zorunludur).
-2. Telefon Ayarları > Uygulamalar > **Termux** ve **Termux:Boot** için **Pil Kısıtlamasını Kaldırın ("Kısıtlamasız" / "Optimize Etme")**.
-3. Cihazınızda varsa "Otomatik Başlatma" (Auto-start / App Launch) iznini hem **Termux** hem **Termux:Boot** için aktif edin.
-4. Termux bildirim panelinde yer alan **"Acquire Wakelock"** seçeneğine tıklayın.
-
-*Artık telefonunuz her yeniden başladığında, Termux arka planda uyanacak, GPS uydularından canlı konumunuzu çekerek belirttiğiniz sıklıkta (varsayılan 5dk) haritaya yollayacaktır. Arayüzü olmadığı için kazara kapatılması mümkün değildir.*
 
 
 
