@@ -53,7 +53,8 @@ if ($passcode -eq "") {
 
 # 3. Mesaj
 Write-Host "`n3. Durum Mesajı Ayarı:" -ForegroundColor Cyan
-Write-Host "  İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://linktr.ee/mcturan | ARC)" -ForegroundColor Yellow
+Write-Host "  İpucu: Frekans ve ton bilgisi eklemek için mesajın başına ekleyin (Örn: 145.550MHz T088)" -ForegroundColor Yellow
+Write-Host "  İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://example.com | ARC)" -ForegroundColor Yellow
 $comment = (Read-Host "Durum Mesajınız [Varsayılan: Windows APRS Beacon]").Trim()
 if ($comment -eq "") {
     $comment = "Windows APRS Beacon"

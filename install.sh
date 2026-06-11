@@ -64,7 +64,8 @@ fi
 
 # 3. Mesaj (Comment)
 echo -e "\n3. Durum Mesajı Ayarı:"
-echo -e "  ${C_YELLOW}İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://linktr.ee/mcturan | ARC)${C_RESET}"
+echo -e "  ${C_YELLOW}İpucu: Frekans ve ton bilgisi eklemek için mesajın başına ekleyin (Örn: 145.550MHz T088)${C_RESET}"
+echo -e "  ${C_YELLOW}İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://example.com | ARC)${C_RESET}"
 read -p "Durum Mesajınız [Varsayılan: Linux APRS Beacon]: " COMMENT
 COMMENT=$(echo "$COMMENT" | xargs)
 if [ -z "$COMMENT" ]; then
