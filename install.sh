@@ -268,8 +268,28 @@ else
 fi
 chmod +x "$INSTALL_DIR/aprs_beacon.py"
 
+# Test Gönderimi (Hataları anında yakalamak için kurulum bitmeden test et)
+echo -e "\n${C_BLUE}[i] Ayarların doğruluğunu onaylamak için test paketi gönderiliyor...${C_RESET}"
+python3 "$INSTALL_DIR/aprs_beacon.py" --once
+if [ $? -eq 0 ]; then
+    echo -e "${C_GREEN}[+] Test Başarılı! Konum paketi APRS-IS ağına iletildi.${C_RESET}"
+else
+    echo -e "${C_RED}[!] Test Başarısız! Paket sunucuya ulaştırılamadı.${C_RESET}"
+    echo -e "${C_YELLOW}[i] İnternet bağlantınızı veya konum yetkilerinizi kontrol edin.${C_RESET}"
+    echo -e "${C_YELLOW}[i] Detaylar için: cat $INSTALL_DIR/aprs_beacon.log${C_RESET}"
+    read -p "Yine de devam etmek istiyor musunuz? [y/N]: " PROCEED
+    PROCEED=$(echo "$PROCEED" | tr 'A-Z' 'a-z' | xargs)
+    if [ "$PROCEED" != "y" ]; then
+        echo "Kurulum iptal edildi."
+        exit 1
+    fi
+fi
+
 # Systemd veya Android Başlangıç Kurulumu
 if [ "$IS_ANDROID" = true ]; then
+    # Android'de uykuyu engellemek için wake lock al
+    termux-wake-lock
+    
     echo -e "\n${C_CYAN}6. Android Otomatik Başlangıç Ayarları:${C_RESET}"
     read -p "Cihaz her açıldığında arka planda otomatik başlasın mı? [Y/n]: " TERMUX_AUTO
     TERMUX_AUTO=$(echo "$TERMUX_AUTO" | tr 'A-Z' 'a-z' | xargs)
