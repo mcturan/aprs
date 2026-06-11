@@ -83,6 +83,49 @@ systemctl --user disable aprs-beacon.service
 
 ---
 
+## 💻 Windows Kurulumu (Görev Zamanlayıcı)
+
+Windows üzerinde bu beacon'ı arka planda konsol penceresi açılmadan (sessizce) çalıştırmak için:
+
+1. **PowerShell'i Açın** ve indirdiğiniz proje klasörüne gidin:
+   ```powershell
+   cd path/to/aprs
+   ```
+2. **Kurulum Sihirbazını Çalıştırın**:
+   ```powershell
+   PowerShell -ExecutionPolicy Bypass -File install.ps1
+   ```
+3. Sihirbaz bilgileri aldıktan sonra `config.json` dosyasını oluşturacak ve Windows Görev Zamanlayıcı'ya (Task Scheduler) ekleyecektir.
+4. **Yönetim Komutları (PowerShell)**:
+   - Başlat: `Start-ScheduledTask -TaskName 'APRSBeacon'`
+   - Durdur: `Stop-ScheduledTask -TaskName 'APRSBeacon'`
+
+---
+
+## 📱 Android Kurulumu (Termux veya APRSdroid)
+
+### Yöntem A: Termux (Python ile Arka Plan)
+1. F-Droid üzerinden **Termux** uygulamasını indirin.
+2. Termux'u açıp gerekli paketleri yükleyin:
+   ```bash
+   pkg update && pkg install python git
+   ```
+3. Depoyu klonlayıp çalıştırın:
+   ```bash
+   git clone https://github.com/mcturan/aprs.git
+   cd aprs
+   python aprs_beacon.py --once   # Test için tek seferlik gönderim
+   ```
+   *Not: Android işletim sistemi arka plan kısıtlamalarından ötürü Termux'u sonlandırabilir. Bunun önüne geçmek için Termux bildirim panelinden "Acquire Wakelock" seçeneğini aktif etmelisiniz.*
+
+### Yöntem B: APRSdroid (Önerilen Yerel Uygulama)
+Telefonlar hareketli cihazlar olduğu için sabit koordinat gönderen bir script yerine, telefonun dahili GPS alıcısını kullanarak gerçek zamanlı konum takibi yapan yerel bir uygulama kullanmak çok daha pratiktir.
+1. [APRSdroid Resmi Web Sitesi](https://aprsdroid.org/) üzerinden uygulamanın `.apk` sürümünü indirin.
+2. Uygulama ayarlarından çağrı işaretinizi ve passcode'unuzu girin.
+3. Bağlantı türünü "APRS-IS" olarak seçip başlatın. Uygulama arka planda telefon hareket ettikçe GPS konumunu otomatik güncelleyecektir.
+
+---
+
 ## 🗺️ Harita Üzerinde İzleme
 
 Servis ilk paketi gönderdikten sonra (yaklaşık 1-2 dakika içinde), istasyonunuzu canlı olarak [aprs.fi](https://aprs.fi/) üzerinden takip edebilirsiniz:
