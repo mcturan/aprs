@@ -151,7 +151,7 @@ for url in urls:
     except:
         continue
 ")
-        if [ -n "$IP_LOC" ]; then
+        if [n "$IP_LOC" ]; then
             IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
             echo -e "${C_GREEN}[+] Otomatik Konum Tespit Edildi: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
             LATITUDE="$LAT"
@@ -264,16 +264,18 @@ if [ "$IS_ANDROID" = true ]; then
     cat <<EOF > "$BOOT_DIR/aprs-beacon"
 #!/usr/bin/env bash
 termux-wake-lock
-python3 $INSTALL_DIR/aprs_beacon.py &
+nohup python3 $INSTALL_DIR/aprs_beacon.py >/dev/null 2>&1 &
 EOF
     chmod +x "$BOOT_DIR/aprs-beacon"
     
     echo -e "${C_GREEN}[+] Termux:Boot scripti oluşturuldu: $BOOT_DIR/aprs-beacon${C_RESET}"
     
     if [ "$AUTO_START" != "n" ]; then
-        echo -e "${C_BLUE}[i] Servis arka planda başlatılıyor...${C_RESET}"
+        echo -e "${C_BLUE}[i] Servis arka planda başlatılıyor (nohup)...${C_RESET}"
         termux-wake-lock
-        python3 $INSTALL_DIR/aprs_beacon.py &
+        # Önce eski olası süreçleri sonlandır
+        pkill -f aprs_beacon.py 2>/dev/null
+        nohup python3 $INSTALL_DIR/aprs_beacon.py >/dev/null 2>&1 &
         
         echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
         echo -e "${C_GREEN}${C_BOLD}           APRS ARKA PLAN SERVİSİ BAŞARIYLA AKTİF EDİLDİ!${C_RESET}"
