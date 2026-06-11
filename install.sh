@@ -63,7 +63,9 @@ print(hash_val & 0x7fff)
 fi
 
 # 3. Mesaj (Comment)
-read -p "3. Durum Mesajınız [Varsayılan: Linux APRS Beacon]: " COMMENT
+echo -e "\n3. Durum Mesajı Ayarı:"
+echo -e "  ${C_YELLOW}İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://linktr.ee/mcturan | ARC)${C_RESET}"
+read -p "Durum Mesajınız [Varsayılan: Linux APRS Beacon]: " COMMENT
 COMMENT=$(echo "$COMMENT" | xargs)
 if [ -z "$COMMENT" ]; then
     COMMENT="Linux APRS Beacon"
