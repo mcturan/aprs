@@ -25,37 +25,26 @@ git clone https://github.com/mcturan/aprs.git
 cd aprs
 ```
 
-### 2. Ayarları Düzenleyin
-`install.sh` dosyasının en üstünde yer alan yapılandırma alanını kendi çağrı işaretiniz, konumunuz ve mesajınıza göre düzenleyin:
-
-```bash
-# ==============================================================================
-# APRS YAPILANDIRMASI
-# ==============================================================================
-CALLSIGN="TA1XBA-2"
-PASSCODE="17082"                       # Boş bırakılırsa otomatik hesaplanır
-LATITUDE="41.028399"
-LONGITUDE="28.976864"
-SYMBOL_TABLE="/"                       # / -> Birincil tablo
-SYMBOL_CODE="X"                        # X -> Helikopter simgesi
-COMMENT="linktr.ee/MCTURAN | ARC"
-INTERVAL_MINUTES=20
-# ==============================================================================
-```
-
-### 3. Kurulum Betiğini Çalıştırın
-Betiğe çalıştırma izni verip çalıştırın:
+### 2. Kurulum Betiğini Çalıştırın
+Betiğe çalıştırma izni verip sihirbazı başlatın:
 ```bash
 chmod +x install.sh aprs_beacon.py
 ./install.sh
 ```
 
-Bu komut ile:
+Sihirbaz sizi adım adım yönlendirerek aşağıdaki ayarları yapmanızı isteyecektir:
+1. **Çağrı İşareti** (Örn: `N0CALL-9`)
+2. **Şifre** (Girilmezse otomatik hesaplanır)
+3. **Durum Mesajı** (Örn: `Linux APRS Beacon`)
+4. **Harita Simgesi** (Helikopter `X`, Araba `>`, Yaya `[`, vb.)
+5. **Konum Tespiti** (İnternet üzerinden otomatik tespit veya Taksim Meydanı `41.037002, 28.985012` koordinatları gibi manuel giriş)
+6. **Otomatik Başlangıç** (Sistem açılışında otomatik başlama tercihi)
+
+Bu işlem sonucunda:
 - `~/.aprs-beacon/` dizini altına ayarlarınız (`config.json`) yazılır.
 - `aprs_beacon.py` ana scripti buraya kopyalanır.
 - `~/.config/systemd/user/aprs-beacon.service` dosyası oluşturulur.
-- Arka plan servisi aktif edilip başlatılır.
-- Bilgisayar başladığında otomatik çalışması için **linger** modu aktif edilir.
+- Eğer otomatik başlangıç seçildiyse servis aktif edilip başlatılır ve **linger** modu aktif edilir.
 
 ---
 
@@ -98,4 +87,4 @@ systemctl --user disable aprs-beacon.service
 
 Servis ilk paketi gönderdikten sonra (yaklaşık 1-2 dakika içinde), istasyonunuzu canlı olarak [aprs.fi](https://aprs.fi/) üzerinden takip edebilirsiniz:
 
-👉 `https://aprs.fi/#!call=a%2F<ÇAGRI_İŞARETİNİZ>` (Örn: `https://aprs.fi/#!call=a%2FTA1XBA-2`)
+👉 `https://aprs.fi/#!call=a%2F<ÇAGRI_İŞARETİNİZ>` (Örn: `https://aprs.fi/#!call=a%2FN0CALL-9`)

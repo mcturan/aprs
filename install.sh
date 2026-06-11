@@ -32,7 +32,7 @@ mkdir -p "$INSTALL_DIR"
 
 # 1. Çağrı İşareti
 while true; do
-    read -p "1. Çağrı İşaretiniz (Örn: TA1XBA-2): " CALLSIGN
+    read -p "1. Çağrı İşaretiniz (Örn: N0CALL-9): " CALLSIGN
     CALLSIGN=$(echo "$CALLSIGN" | tr 'a-z' 'A-Z' | xargs)
     if [ -n "$CALLSIGN" ]; then
         break
@@ -95,7 +95,15 @@ esac
 
 # 5. Konum (Location)
 echo -e "\n5. Konum ayarları:"
-IP_LOC=$(python3 -c "
+read -p "Sistem konumunuzu internet üzerinden otomatik tespit etsin mi? [Y/n]: " AUTO_LOC
+AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
+
+LATITUDE=""
+LONGITUDE=""
+
+if [ "$AUTO_LOC" != "n" ]; then
+    echo -e "${C_BLUE}[i] Konumunuz internet üzerinden otomatik tespit ediliyor...${C_RESET}"
+    IP_LOC=$(python3 -c "
 import urllib.request, json
 try:
     req = urllib.request.Request('http://ip-api.com/json', headers={'User-Agent': 'Mozilla/5.0'})
@@ -106,25 +114,20 @@ try:
 except:
     pass
 ")
-
-LATITUDE=""
-LONGITUDE=""
-
-if [ -n "$IP_LOC" ]; then
-    IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
-    echo -e "${C_GREEN}[+] Otomatik Konum Tespit Edildi: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
-    read -p "Bu otomatik konumu kullanmak istiyor musunuz? [Y/n]: " USE_AUTO
-    USE_AUTO=$(echo "$USE_AUTO" | tr 'A-Z' 'a-z' | xargs)
-    if [ "$USE_AUTO" != "n" ]; then
+    if [ -n "$IP_LOC" ]; then
+        IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
+        echo -e "${C_GREEN}[+] Otomatik Konum Tespit Edildi: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
         LATITUDE="$LAT"
         LONGITUDE="$LON"
+    else
+        echo -e "${C_RED}[!] Otomatik konum tespiti başarısız oldu. Manuel girişe geçiliyor...${C_RESET}"
     fi
 fi
 
 if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
-    echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin (Örn: 41.028399, 28.976864):${C_RESET}"
+    echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin:${C_RESET}"
     while true; do
-        read -p "  Enlem (Latitude, Örn: 41.028399): " LATITUDE
+        read -p "  Enlem (Latitude, Örn: 41.037002 - Taksim Meydanı): " LATITUDE
         LATITUDE=$(echo "$LATITUDE" | xargs)
         if python3 -c "float('$LATITUDE')" &>/dev/null; then
             break
@@ -132,7 +135,7 @@ if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
         echo -e "${C_RED}Hata: Geçersiz enlem değeri!${C_RESET}"
     done
     while true; do
-        read -p "  Boylam (Longitude, Örn: 28.976864): " LONGITUDE
+        read -p "  Boylam (Longitude, Örn: 28.985012 - Taksim Meydanı): " LONGITUDE
         LONGITUDE=$(echo "$LONGITUDE" | xargs)
         if python3 -c "float('$LONGITUDE')" &>/dev/null; then
             break
