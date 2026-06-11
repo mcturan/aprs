@@ -48,33 +48,41 @@ def generate_aprs_passcode(callsign):
     return hash_val & 0x7fff
 
 def get_termux_gps():
-    # Check if termux-location command is available
     if not shutil.which('termux-location'):
         log_message("HATA: 'termux-location' komutu bulunamadı. Lütfen Termux:API uygulamasını telefona kurun ve Termux içinde 'pkg install termux-api' komutunu çalıştırın.")
         return None
     
-    log_message("Termux:API kullanılarak GPS uydularından canlı konum alınıyor...")
+    # 1. Şebeke (Network) tabanlı konum sorgula (Hızlıdır, ev/oda içinde çalışır)
+    log_message("Termux:API ile şebeke (Network/Wi-Fi) konumu alınıyor...")
     try:
-        # Run termux-location command with 10 second timeout
-        result = subprocess.run(['termux-location', '-p', 'gps'], capture_output=True, text=True, timeout=12)
+        result = subprocess.run(['termux-location', '-p', 'network'], capture_output=True, text=True, timeout=6)
         if result.returncode == 0:
             data = json.loads(result.stdout)
             if 'latitude' in data and 'longitude' in data:
                 return float(data['latitude']), float(data['longitude'])
-    except subprocess.TimeoutExpired:
-        log_message("HATA: GPS konumu alma zaman aşımına uğradı (GPS uydusu aranıyor veya konum kapalı olabilir).")
     except Exception as e:
-        log_message(f"HATA: Termux GPS konumu okunamadı: {e}")
+        log_message(f"Şebeke konumu okuma denemesi başarısız: {e}")
+        
+    # 2. GPS (Uydu) tabanlı konum sorgula (Dış mekanlar için hassas ama iç mekanda zaman aşımına uğrar)
+    log_message("Termux:API ile GPS uydularından konum alınıyor...")
+    try:
+        result = subprocess.run(['termux-location', '-p', 'gps'], capture_output=True, text=True, timeout=8)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            if 'latitude' in data and 'longitude' in data:
+                return float(data['latitude']), float(data['longitude'])
+    except Exception as e:
+        log_message(f"GPS uydu konumu okuma denemesi başarısız: {e}")
+        
     return None
 
 def get_coordinates(config):
-    # If Termux live GPS is requested and we are on Android
     if config.get('use_termux_gps', False):
         gps = get_termux_gps()
         if gps:
             return gps
         else:
-            log_message("UYARI: Canlı GPS alınamadı. config.json içerisindeki statik konum kullanılacak.")
+            log_message("UYARI: Canlı konum alınamadı. config.json içerisindeki statik konum yedek olarak kullanılacak.")
             
     return float(config['latitude']), float(config['longitude'])
 
@@ -87,7 +95,6 @@ def send_beacon(config):
     server = config.get('server', 'rotate.aprs2.net')
     port = int(config.get('port', 14580))
     
-    # Get coordinates (static or live Termux GPS)
     coords = get_coordinates(config)
     if not coords:
         log_message("HATA: Geçerli koordinat bulunamadı. Gönderim iptal edildi.")
@@ -157,12 +164,11 @@ def main():
     log_message("APRS Beacon Servisi başlatıldı.")
     
     while True:
-        # Reload configuration on each interval so changes are picked up without restarting
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config = json.load(f)
         except Exception:
-            pass # Keep previous config if read fails
+            pass
             
         send_beacon(config)
         log_message(f"{config.get('interval_minutes')} dakika boyunca bekleniyor...")

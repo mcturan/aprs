@@ -87,16 +87,15 @@ if [ "$IS_ANDROID" = true ]; then
     # 4. Konum izinlerini tetikleme
     echo -e "${C_BLUE}[i] Telefondan GPS yetkisini tetiklemek için konum sorgulanıyor...${C_RESET}"
     echo -e "${C_YELLOW}[!] Lütfen telefon ekranında konum izni pop-up'ı çıkarsa 'Her zaman izin ver' seçeneğini işaretleyin.${C_RESET}"
-    termux-location -p gps -last &>/dev/null
+    termux-location -p network -last &>/dev/null
     
     # Canlı GPS kullanım seçimi
     read -p "Android cihazınızın canlı GPS konumunu kullanmak ister misiniz? [Y/n]: " TERMUX_GPS_CHOICE
     TERMUX_GPS_CHOICE=$(echo "$TERMUX_GPS_CHOICE" | tr 'A-Z' 'a-z' | xargs)
     if [ "$TERMUX_GPS_CHOICE" != "n" ]; then
         USE_TERMUX_GPS=true
-        LATITUDE="0.0"
-        LONGITUDE="0.0"
         echo -e "${C_GREEN}[+] Canlı GPS konumu aktif edildi. Arka planda telefondan anlık konum alınacaktır.${C_RESET}"
+        echo -e "${C_YELLOW}[!] Not: Canlı GPS'in çekmediği anlar için bir yedek (yedek/statik) konum ayarlayacağız.${C_RESET}"
     fi
 fi
 
@@ -167,14 +166,16 @@ case "$SYM_CHOICE" in
     *) SYMBOL_CODE="X" ;;
 esac
 
-# 5. Konum (Sadece Canlı GPS seçilmediyse sorulur)
-if [ "$USE_TERMUX_GPS" = false ]; then
-    read -p "Sistem konumunuzu internet üzerinden otomatik tespit etsin mi? [Y/n]: " AUTO_LOC
-    AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
+# 5. Konum (Canlı GPS seçilmiş olsa dahi yedek olarak sorulur)
+LATITUDE=""
+LONGITUDE=""
 
-    if [ "$AUTO_LOC" != "n" ]; then
-        echo -e "${C_BLUE}[i] Konumunuz internet üzerinden otomatik tespit ediliyor...${C_RESET}"
-        IP_LOC=$(python3 -c "
+read -p "Sistem yedek/statik konumunuzu internet üzerinden otomatik tespit etsin mi? [Y/n]: " AUTO_LOC
+AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
+
+if [ "$AUTO_LOC" != "n" ]; then
+    echo -e "${C_BLUE}[i] Konumunuz internet üzerinden otomatik tespit ediliyor...${C_RESET}"
+    IP_LOC=$(python3 -c "
 import urllib.request, json
 urls = ['http://ip-api.com/json', 'https://ipapi.co/json/']
 for url in urls:
@@ -192,38 +193,37 @@ for url in urls:
     except:
         continue
 ")
-        if [ -n "$IP_LOC" ]; then
-            IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
-            echo -e "${C_GREEN}[+] Otomatik Konum Tespit Edildi: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
-            LATITUDE="$LAT"
-            LONGITUDE="$LON"
-        else
-            echo -e "${C_RED}[!] Otomatik konum tespiti başarısız oldu.${C_RESET}"
-        fi
+    if [ -n "$IP_LOC" ]; then
+        IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
+        echo -e "${C_GREEN}[+] Otomatik Konum Tespit Edildi: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
+        LATITUDE="$LAT"
+        LONGITUDE="$LON"
+    else
+        echo -e "${C_RED}[!] Otomatik konum tespiti başarısız oldu.${C_RESET}"
     fi
+fi
 
-    if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
-        echo -e "${C_BLUE}[i] Koordinatlarınızı kolayca bulabilmeniz için tarayıcıda OpenStreetMap açılıyor...${C_RESET}"
-        python3 -m webbrowser "https://www.openstreetmap.org" &>/dev/null &
-        
-        echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan Taksim Meydanı gibi konumunuzu bulun):${C_RESET}"
-        while true; do
-            read -p "  Enlem (Latitude, Örn: 41.037002 - Taksim Meydanı): " LATITUDE
-            LATITUDE=$(echo "$LATITUDE" | xargs)
-            if python3 -c "float('$LATITUDE')" &>/dev/null; then
-                break
-            fi
-            echo -e "${C_RED}Hata: Geçersiz enlem değeri!${C_RESET}"
-        done
-        while true; do
-            read -p "  Boylam (Longitude, Örn: 28.985012 - Taksim Meydanı): " LONGITUDE
-            LONGITUDE=$(echo "$LONGITUDE" | xargs)
-            if python3 -c "float('$LONGITUDE')" &>/dev/null; then
-                break
-            fi
-            echo -e "${C_RED}Hata: Geçersiz boylam değeri!${C_RESET}"
-        done
-    fi
+if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
+    echo -e "${C_BLUE}[i] Koordinatlarınızı kolayca bulabilmeniz için tarayıcıda OpenStreetMap açılıyor...${C_RESET}"
+    python3 -m webbrowser "https://www.openstreetmap.org" &>/dev/null &
+    
+    echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan Taksim Meydanı gibi konumunuzu bulun):${C_RESET}"
+    while true; do
+        read -p "  Enlem (Latitude, Örn: 41.037002 - Taksim Meydanı): " LATITUDE
+        LATITUDE=$(echo "$LATITUDE" | xargs)
+        if python3 -c "float('$LATITUDE')" &>/dev/null; then
+            break
+        fi
+        echo -e "${C_RED}Hata: Geçersiz enlem değeri!${C_RESET}"
+    done
+    while true; do
+        read -p "  Boylam (Longitude, Örn: 28.985012 - Taksim Meydanı): " LONGITUDE
+        LONGITUDE=$(echo "$LONGITUDE" | xargs)
+        if python3 -c "float('$LONGITUDE')" &>/dev/null; then
+            break
+        fi
+        echo -e "${C_RED}Hata: Geçersiz boylam değeri!${C_RESET}"
+    done
 fi
 
 # 6. Sıklık (Interval)
@@ -295,7 +295,7 @@ EOF
         echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
         echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
         if [ "$USE_TERMUX_GPS" = true ]; then
-            echo -e "${C_BOLD}Konum          :${C_RESET} Android Donanım GPS (Dinamik)"
+            echo -e "${C_BOLD}Konum          :${C_RESET} Android Donanım GPS (Dinamik) [Yedek: Enlem=$LATITUDE, Boylam=$LONGITUDE]"
         else
             echo -e "${C_BOLD}Konum          :${C_RESET} Enlem=$LATITUDE, Boylam=$LONGITUDE (Statik)"
         fi
