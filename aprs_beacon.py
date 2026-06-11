@@ -5,6 +5,8 @@ import socket
 import time
 import json
 import argparse
+import subprocess
+import shutil
 from datetime import datetime
 
 # Path configuration
@@ -45,6 +47,37 @@ def generate_aprs_passcode(callsign):
         hash_val ^= (char1 + char2)
     return hash_val & 0x7fff
 
+def get_termux_gps():
+    # Check if termux-location command is available
+    if not shutil.which('termux-location'):
+        log_message("HATA: 'termux-location' komutu bulunamadı. Lütfen Termux:API uygulamasını telefona kurun ve Termux içinde 'pkg install termux-api' komutunu çalıştırın.")
+        return None
+    
+    log_message("Termux:API kullanılarak GPS uydularından canlı konum alınıyor...")
+    try:
+        # Run termux-location command with 10 second timeout
+        result = subprocess.run(['termux-location', '-p', 'gps'], capture_output=True, text=True, timeout=12)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            if 'latitude' in data and 'longitude' in data:
+                return float(data['latitude']), float(data['longitude'])
+    except subprocess.TimeoutExpired:
+        log_message("HATA: GPS konumu alma zaman aşımına uğradı (GPS uydusu aranıyor veya konum kapalı olabilir).")
+    except Exception as e:
+        log_message(f"HATA: Termux GPS konumu okunamadı: {e}")
+    return None
+
+def get_coordinates(config):
+    # If Termux live GPS is requested and we are on Android
+    if config.get('use_termux_gps', False):
+        gps = get_termux_gps()
+        if gps:
+            return gps
+        else:
+            log_message("UYARI: Canlı GPS alınamadı. config.json içerisindeki statik konum kullanılacak.")
+            
+    return float(config['latitude']), float(config['longitude'])
+
 def send_beacon(config):
     callsign = config['callsign'].upper()
     passcode = config.get('passcode')
@@ -54,8 +87,13 @@ def send_beacon(config):
     server = config.get('server', 'rotate.aprs2.net')
     port = int(config.get('port', 14580))
     
-    lat = float(config['latitude'])
-    lon = float(config['longitude'])
+    # Get coordinates (static or live Termux GPS)
+    coords = get_coordinates(config)
+    if not coords:
+        log_message("HATA: Geçerli koordinat bulunamadı. Gönderim iptal edildi.")
+        return False
+        
+    lat, lon = coords
     symbol_table = config.get('symbol_table', '/')
     symbol_code = config.get('symbol_code', '-')
     comment = config.get('comment', 'Linux Background APRS Beacon')
@@ -115,10 +153,17 @@ def main():
         success = send_beacon(config)
         sys.exit(0 if success else 1)
         
-    interval = int(config.get('interval_minutes', 20)) * 60
+    interval = int(config.get('interval_minutes', 5)) * 60
     log_message("APRS Beacon Servisi başlatıldı.")
     
     while True:
+        # Reload configuration on each interval so changes are picked up without restarting
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except Exception:
+            pass # Keep previous config if read fails
+            
         send_beacon(config)
         log_message(f"{config.get('interval_minutes')} dakika boyunca bekleniyor...")
         time.sleep(interval)

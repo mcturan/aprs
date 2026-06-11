@@ -85,22 +85,41 @@ $longitude = ""
 
 if ($autoLoc -ne "n") {
     Write-Host "[i] Konumunuz internet üzerinden otomatik tespit ediliyor..." -ForegroundColor Blue
-    try {
-        $ipLoc = Invoke-RestMethod -Uri "http://ip-api.com/json" -TimeoutSec 4
-        if ($ipLoc.status -eq "success") {
-            Write-Host "[+] Otomatik Konum Tespit Edildi: $($ipLoc.city), $($ipLoc.country) ($($ipLoc.lat), $($ipLoc.lon))" -ForegroundColor Green
-            $latitude = $ipLoc.lat
-            $longitude = $ipLoc.lon
-        } else {
-            Write-Host "[!] Otomatik konum tespiti başarısız oldu." -ForegroundColor Red
+    # Try multiple geolocation APIs
+    $apis = @(
+        "http://ip-api.com/json",
+        "https://ipapi.co/json/"
+    )
+    foreach ($api in $apis) {
+        try {
+            $ipLoc = Invoke-RestMethod -Uri $api -TimeoutSec 4
+            if ($ipLoc.status -eq "success" -or $ipLoc.latitude -ne $null) {
+                $lat = if ($ipLoc.lat) { $ipLoc.lat } else { $ipLoc.latitude }
+                $lon = if ($ipLoc.lon) { $ipLoc.lon } else { $ipLoc.longitude }
+                $city = if ($ipLoc.city) { $ipLoc.city } else { "Bilinmiyor" }
+                $country = if ($ipLoc.country_name) { $ipLoc.country_name } else { $ipLoc.country }
+                
+                Write-Host "[+] Otomatik Konum Tespit Edildi: $city, $country ($lat, $lon)" -ForegroundColor Green
+                $latitude = $lat
+                $longitude = $lon
+                break
+            }
+        } catch {
+            continue
         }
-    } catch {
-        Write-Host "[!] Konum servislerine erişilemedi." -ForegroundColor Yellow
+    }
+    if ($latitude -eq "" -or $longitude -eq "") {
+        Write-Host "[!] Otomatik konum tespiti başarısız oldu." -ForegroundColor Red
     }
 }
 
 if ($latitude -eq "" -or $longitude -eq "") {
-    Write-Host "[!] Lütfen koordinatlarınızı manuel girin:" -ForegroundColor Yellow
+    Write-Host "[i] Koordinatlarınızı kolayca bulabilmeniz için tarayıcıda OpenStreetMap açılıyor..." -ForegroundColor Blue
+    try {
+        Start-Process "https://www.openstreetmap.org"
+    } catch {}
+
+    Write-Host "[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan Taksim Meydanı gibi konumunuzu bulun):" -ForegroundColor Yellow
     while ($true) {
         $latitude = (Read-Host "  Enlem (Latitude, Örn: 41.037002 - Taksim Meydanı)").Trim()
         if ([double]::TryParse($latitude, [ref]0.0)) { break }
@@ -113,8 +132,19 @@ if ($latitude -eq "" -or $longitude -eq "") {
     }
 }
 
-# 6. Başlangıç Ayarı
-$autoStart = (Read-Host "Sistem açılışında otomatik başlasın mı? [Y/n]").Trim().ToLower()
+# 6. Sıklık (Interval)
+while ($true) {
+    $intervalInput = (Read-Host "6. Kaç dakikada bir beacon gönderilsin? [Varsayılan: 5]").Trim()
+    if ($intervalInput -eq "") {
+        $interval = 5
+        break
+    }
+    if ([int]::TryParse($intervalInput, [ref]0) -and [int]$intervalInput -ge 1) {
+        $interval = [int]$intervalInput
+        break
+    }
+    Write-Host "Hata: Aralık en az 1 dakika olmalıdır!" -ForegroundColor Red
+}
 
 # Yapılandırmayı JSON olarak kaydet
 $configJson = @"
@@ -123,10 +153,11 @@ $configJson = @"
     "passcode": $passcode,
     "latitude": $latitude,
     "longitude": $longitude,
+    "use_termux_gps": false,
     "symbol_table": "$symbolTable",
     "symbol_code": "$symbolCode",
     "comment": "$comment",
-    "interval_minutes": 20,
+    "interval_minutes": $interval,
     "server": "rotate.aprs2.net",
     "port": 14580
 }
@@ -142,6 +173,9 @@ if (Test-Path ".\aprs_beacon.py") {
     Write-Host "[!] Hata: Mevcut klasörde aprs_beacon.py bulunamadı!" -ForegroundColor Red
     Exit
 }
+
+# 7. Başlangıç Ayarı
+$autoStart = (Read-Host "Sistem açılışında otomatik başlasın mı? [Y/n]").Trim().ToLower()
 
 # Windows Görev Zamanlayıcıya ekleme (Sadece kullanıcı oturum açtığında arka planda çalıştır)
 if ($autoStart -ne "n") {
@@ -162,6 +196,7 @@ if ($autoStart -ne "n") {
     Write-Host "Konum          : Enlem=$latitude, Boylam=$longitude"
     Write-Host "Simge          : $symbolTable$symbolCode"
     Write-Host "Durum          : Arka planda sessizce çalışacak (Görev Zamanlayıcı)"
+    Write-Host "Gönderim Sıklığı: $interval dakikada bir"
     Write-Host "Otomatik Başlama: Kullanıcı oturum açtığında otomatik başlayacak."
     Write-Host "----------------------------------------------------------------"
     Write-Host "Manuel başlatmak için:  Start-ScheduledTask -TaskName 'APRSBeacon'"

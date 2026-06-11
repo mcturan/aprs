@@ -104,19 +104,30 @@ Windows üzerinde bu beacon'ı arka planda konsol penceresi açılmadan (sessizc
 
 ## 📱 Android Kurulumu (Termux veya APRSdroid)
 
-### Yöntem A: Termux (Python ile Arka Plan)
-1. F-Droid üzerinden **Termux** uygulamasını indirin.
-2. Termux'u açıp gerekli paketleri yükleyin:
+### Yöntem A: Termux (Canlı GPS & Tam Arka Plan)
+Android telefonunuzun dahili GPS'ini kullanarak arka planda konumunuzu otomatik güncelleyen ve tamamen otomatik çalışan bir servis kurmak için:
+
+1. F-Droid üzerinden **Termux** ve **Termux:API** uygulamalarını indirin (İki uygulamanın da aynı mağazadan (F-Droid) yüklenmiş olması çakışmaları önlemek için zorunludur).
+2. Telefonunuzun Ayarlarından Termux uygulamasına **"Konum (Her zaman izin ver)"** yetkisi verin.
+3. Termux uygulamasını açıp gerekli paketleri yükleyin:
    ```bash
-   pkg update && pkg install python git
+   pkg update
+   pkg install python git termux-api
    ```
-3. Depoyu klonlayıp çalıştırın:
+4. Depoyu klonlayın ve kurulum sihirbazını başlatın:
    ```bash
    git clone https://github.com/mcturan/aprs.git
    cd aprs
-   python aprs_beacon.py --once   # Test için tek seferlik gönderim
+   chmod +x install.sh aprs_beacon.py
+   ./install.sh
    ```
-   *Not: Android işletim sistemi arka plan kısıtlamalarından ötürü Termux'u sonlandırabilir. Bunun önüne geçmek için Termux bildirim panelinden "Acquire Wakelock" seçeneğini aktif etmelisiniz.*
+5. Sihirbaz esnasında `"Android cihazınızın canlı GPS konumunu kullanmak ister misiniz?"` sorusuna `Evet` deyin.
+6. Kurulum tamamlandıktan sonra arka planda sessizce çalıştırmak için:
+   ```bash
+   nohup python aprs_beacon.py > /dev/null 2>&1 &
+   ```
+   *Not: Android'in arka planda Termux'u kapatmasını engellemek için Termux bildirim çubuğundaki **"Acquire Wakelock"** seçeneğini aktif etmelisiniz.*
+
 
 ### Yöntem B: APRSdroid (Önerilen Yerel Uygulama)
 Telefonlar hareketli cihazlar olduğu için sabit koordinat gönderen bir script yerine, telefonun dahili GPS alıcısını kullanarak gerçek zamanlı konum takibi yapan yerel bir uygulama kullanmak çok daha pratiktir.
