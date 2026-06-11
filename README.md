@@ -102,28 +102,39 @@ Windows üzerinde bu beacon'ı arka planda konsol penceresi açılmadan (sessizc
 
 ---
 
-## 📱 Android Kurulumu (APRSdroid - En Güvenilir Yöntem)
+## 📱 Android Kurulumu (Görünmez Arka Plan Servisi - Termux:Boot)
 
-Android'in sıkı güvenlik yapısı ve pil tasarrufu kısıtlamaları (Doze Mode) nedeniyle, Termux gibi terminal emülatörleri arka planda uzun süre aktif kalamaz ve GPS uydularına erişimi kısıtlanır. Android'de servisin **bilgisayardaki gibi arka planda görünmez şekilde** ve cihaz açıldığında otomatik başlamasını sağlamanın en sağlıklı yolu native **APRSdroid** uygulamasıdır.
+Android telefonunuzda görsel bir uygulama açmak zorunda kalmadan, telefon açıldığında arka planda tamamen sessizce (başlangıçta otomatik olarak) başlayacak ve **"Son Uygulamalar" (Recents) ekranında görünmeyeceği için yanlışlıkla kapatılamayacak** bir yapı kurmak için:
 
-APRSdroid'i her seferinde manuel açmak zorunda kalmamak ve arka planda sürekli çalışmasını sağlamak için şu adımları uygulayın:
+### 1. Gerekli Paketlerin Kurulumu
+1. F-Droid üzerinden **Termux**, **Termux:API** ve **Termux:Boot** uygulamalarını indirin (F-Droid sürümleri olmalıdır).
+2. Telefonunuzun **Ayarlar > Uygulamalar > Termux** menüsünden **"Konum (Her zaman izin ver)"** yetkisi tanımlayın.
+3. Termux'u açıp aşağıdaki paketleri yükleyin:
+   ```bash
+   pkg update
+   pkg install python git termux-api
+   ```
 
-### 1. APRSdroid Kurulumu
-1. [APRSdroid Resmi Web Sitesi](https://aprsdroid.org/) üzerinden uygulamanın `.apk` sürümünü indirin ve kurun.
-2. Ayarlardan Çağrı İşaretinizi (`N0CALL-9`) ve Passcode'unuzu girin. Bağlantı protokolünü **APRS-IS** yapın.
+### 2. Sihirbazı Çalıştırma
+Projeyi klonlayıp kurulum sihirbazını başlatın:
+```bash
+git clone https://github.com/mcturan/aprs.git
+cd aprs
+chmod +x install.sh aprs_beacon.py
+./install.sh
+```
+- Sihirbazda `"Android cihazınızın canlı GPS konumunu kullanmak ister misiniz?"` sorusuna `Evet` deyin.
+- `"Cihaz her açıldığında otomatik başlasın mı?"` sorusuna `Evet` deyin. Bu işlem sonucunda `~/.termux/boot/start-aprs.sh` dosyası otomatik oluşturulur.
 
-### 2. Cihaz Başlangıcında Otomatik Çalıştırma (Start on Boot)
-APRSdroid'in telefon her açıldığında arka planda otomatik çalışmaya başlaması için:
-- **APRSdroid Ayarları > Connection preferences** sekmesine gidin.
-- **Start on Boot** (Cihaz açılışında başlat) seçeneğini işaretleyin.
+### 3. Kalıcılık Ayarları (Çok Önemli!)
+Android'in servisi uyutmasını engellemek için telefonunuzda şu adımları yapın:
+1. **Termux:Boot** uygulamasını telefonunuzda bir kez manuel olarak açın (Android'in boot izinlerini tetiklemesi için gereklidir).
+2. Telefon Ayarları > Uygulamalar > **Termux** ve **Termux:Boot** için **Pil Kısıtlamasını Kaldırın ("Kısıtlamasız" / "Optimize Etme")**.
+3. Cihazınızda varsa "Otomatik Başlatma" (Auto-start / App Launch) iznini hem **Termux** hem **Termux:Boot** için aktif edin.
+4. Termux bildirim panelinde yer alan **"Acquire Wakelock"** seçeneğine tıklayın.
 
-### 3. Pil Kısıtlamalarını Kaldırma (Çok Önemli!)
-Android'in arka plandaki servisleri kapatmasını engellemek için:
-- Telefonunuzun **Ayarlar > Uygulamalar > APRSdroid > Pil** (veya Güç Kullanımı) menüsüne gidin.
-- Pil modunu **"Kısıtlamasız" (Unrestricted / Optimize Etme)** olarak ayarlayın.
-- Cihazınız Xiaomi/Huawei/Samsung ise, "Otomatik Başlatma" (Auto-start / App Launch) iznini APRSdroid için aktif edin.
+*Artık telefonunuz her yeniden başladığında, Termux arka planda uyanacak, GPS uydularından canlı konumunuzu çekerek belirttiğiniz sıklıkta (varsayılan 5dk) haritaya yollayacaktır. Arayüzü olmadığı için kazara kapatılması mümkün değildir.*
 
-*Bu ayarları yaptığınızda APRSdroid telefonunuz açıldığında arka planda bir servis (Foreground Service) olarak otomatik başlayacak ve siz uygulamayı açmasanız dahi GPS konumunuzu haritada güncel tutacaktır.*
 
 
 ---

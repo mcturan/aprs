@@ -121,7 +121,6 @@ if [ "$USE_TERMUX_GPS" = false ]; then
 
     if [ "$AUTO_LOC" != "n" ]; then
         echo -e "${C_BLUE}[i] Konumunuz internet üzerinden otomatik tespit ediliyor...${C_RESET}"
-        # Birden fazla servis dene (ip-api.com ve ipapi.co)
         IP_LOC=$(python3 -c "
 import urllib.request, json
 urls = ['http://ip-api.com/json', 'https://ipapi.co/json/']
@@ -152,7 +151,6 @@ for url in urls:
 
     if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
         echo -e "${C_BLUE}[i] Koordinatlarınızı kolayca bulabilmeniz için tarayıcıda OpenStreetMap açılıyor...${C_RESET}"
-        # Python webbrowser modülü kullanarak tarayıcıyı aç
         python3 -m webbrowser "https://www.openstreetmap.org" &>/dev/null &
         
         echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan Taksim Meydanı gibi konumunuzu bulun):${C_RESET}"
@@ -219,15 +217,44 @@ chmod +x "$INSTALL_DIR/aprs_beacon.py"
 
 # Systemd veya Android Başlangıç Kurulumu
 if [ "$IS_ANDROID" = true ]; then
-    echo -e "\n${C_YELLOW}[!] Android/Termux üzerinde çalışıyorsunuz. Systemd kullanılamaz.${C_RESET}"
-    echo -e "Arka planda çalıştırmak için aşağıdaki komutu kullanabilirsiniz:"
-    echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
+    echo -e "\n${C_CYAN}6. Android Otomatik Başlangıç Ayarları:${C_RESET}"
+    read -p "Cihaz her açıldığında arka planda otomatik başlasın mı? [Y/n]: " TERMUX_AUTO
+    TERMUX_AUTO=$(echo "$TERMUX_AUTO" | tr 'A-Z' 'a-z' | xargs)
     
-    if [ "$USE_TERMUX_GPS" = true ]; then
-        echo -e "\n${C_CYAN}ÖNEMLİ (Canlı GPS İçin):${C_RESET}"
-        echo -e "1. Cihazınızda 'Termux:API' uygulamasının yüklü olduğundan emin olun."
-        echo -e "2. Termux içinde ${C_BOLD}pkg install termux-api${C_RESET} komutunu çalıştırın."
-        echo -e "3. Termux'a konum erişim izni (Her zaman izin ver) verdiğinizden emin olun."
+    if [ "$TERMUX_AUTO" != "n" ]; then
+        BOOT_DIR="$HOME/.termux/boot"
+        mkdir -p "$BOOT_DIR"
+        
+        # Termux:Boot başlangıç betiğini yaz
+        cat <<EOF > "$BOOT_DIR/start-aprs.sh"
+#!/usr/bin/env bash
+termux-wake-lock
+python3 $INSTALL_DIR/aprs_beacon.py &
+EOF
+        chmod +x "$BOOT_DIR/start-aprs.sh"
+        echo -e "${C_GREEN}[+] Otomatik başlangıç betiği oluşturuldu: $BOOT_DIR/start-aprs.sh${C_RESET}"
+        
+        echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
+        echo -e "${C_GREEN}${C_BOLD}           APRS ANDROID ARKA PLAN SERVİSİ YAPILANDIRILDI!${C_RESET}"
+        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
+        echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
+        echo -e "${C_BOLD}Konum          :${C_RESET} GPS Canlı Konum (Termux:API)"
+        echo -e "${C_BOLD}Gönderim Sıklığı:${C_RESET} $INTERVAL_MINUTES dakikada bir"
+        echo -e "${C_BOLD}Durum          :${C_RESET} Cihaz başladığında arka planda otomatik çalışacak."
+        echo -e "----------------------------------------------------------------"
+        echo -e "${C_YELLOW}ÖNEMLİ - Telefonunuzda Yapmanız Gereken Ayarlar:${C_RESET}"
+        echo -e "1. F-Droid'den ${C_BOLD}Termux:Boot${C_RESET} uygulamasını telefonunuza indirin."
+        echo -e "2. ${C_BOLD}Termux:Boot${C_RESET} uygulamasını cihazınızda bir kez açın (Android tetikleyicisi için gereklidir)."
+        echo -e "3. Telefon Ayarları > Uygulamalar > Termux ve Termux:Boot için ${C_BOLD}Pil Kısıtlamasını Kaldırın (Kısıtlamasız / Optimize Etme)${C_RESET}."
+        echo -e "4. Termux bildirim panelinden ${C_BOLD}Acquire Wakelock${C_RESET} butonuna basarak uykuyu engelleyin."
+        echo -e "5. Termux içinde şu paketin kurulu olduğundan emin olun: ${C_BOLD}pkg install termux-api${C_RESET}"
+        echo -e "----------------------------------------------------------------"
+        echo -e "Şu anda arka planda manuel başlatmak için:"
+        echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
+        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
+    else
+        echo -e "${C_YELLOW}[!] Otomatik başlangıç kurulmadı. Manuel arka planda başlatmak için:${C_RESET}"
+        echo -e "  nohup python3 $INSTALL_DIR/aprs_beacon.py > /dev/null 2>&1 &"
     fi
 else
     # Linux systemd işlemleri
