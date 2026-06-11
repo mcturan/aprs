@@ -194,12 +194,20 @@ EOF
 
 echo -e "\n${C_GREEN}[+] Yapılandırma dosyası kaydedildi: $INSTALL_DIR/config.json${C_RESET}"
 
-# Daemon dosyasını kopyala
-if [ -f "./aprs_beacon.py" ]; then
-    cp "./aprs_beacon.py" "$INSTALL_DIR/aprs_beacon.py"
+# Daemon dosyasını indir veya güncelle
+echo -e "${C_BLUE}[i] En güncel aprs_beacon.py dosyası indiriliyor/güncelleniyor...${C_RESET}"
+if command -v curl &>/dev/null; then
+    curl -sL -o "$INSTALL_DIR/aprs_beacon.py" "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
+elif command -v wget &>/dev/null; then
+    wget -q -o "$INSTALL_DIR/aprs_beacon.py" "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
 else
-    echo -e "${C_RED}[!] Hata: Kurulum dizininde aprs_beacon.py bulunamadı!${C_RESET}"
-    exit 1
+    # Çevrimdışı durumlar için yerel kopyaya dön
+    if [ -f "./aprs_beacon.py" ]; then
+        cp "./aprs_beacon.py" "$INSTALL_DIR/aprs_beacon.py"
+    else
+        echo -e "${C_RED}[!] Hata: İnternet bağlantısı veya curl/wget bulunamadı, yerel dosya da mevcut değil!${C_RESET}"
+        exit 1
+    fi
 fi
 chmod +x "$INSTALL_DIR/aprs_beacon.py"
 

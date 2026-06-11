@@ -17,20 +17,22 @@ Herhangi bir grafik arayüze (GUI) ihtiyaç duymadan, sistem kaynaklarını tük
 
 ## 🚀 Kurulum ve Çalıştırma
 
-Bu projeyi başka bir bilgisayarda veya kendi bilgisayarınızda kurmak için şu adımları izleyin:
+Bu projeyi tek bir komutla doğrudan kurabilir veya güncelleyebilirsiniz:
 
-### 1. Dosyaları İndirin
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/mcturan/aprs/main/install.sh)
+```
+
+*(Bu komut en güncel dosyaları GitHub'dan indirir, varsa eskilerini günceller ve kurulum sihirbazını başlatır).*
+
+Alternatif olarak, depoyu klonlayıp yerel olarak da çalıştırabilirsiniz:
 ```bash
 git clone https://github.com/mcturan/aprs.git
 cd aprs
-```
-
-### 2. Kurulum Betiğini Çalıştırın
-Betiğe çalıştırma izni verip sihirbazı başlatın:
-```bash
 chmod +x install.sh aprs_beacon.py
 ./install.sh
 ```
+
 
 Sihirbaz sizi adım adım yönlendirerek aşağıdaki ayarları yapmanızı isteyecektir:
 1. **Çağrı İşareti** (Örn: `N0CALL-9`)
