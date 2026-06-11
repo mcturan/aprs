@@ -5,6 +5,7 @@ import socket
 import time
 import json
 import argparse
+import subprocess
 from datetime import datetime
 
 # Path configuration
@@ -45,6 +46,26 @@ def generate_aprs_passcode(callsign):
         hash_val ^= (char1 + char2)
     return hash_val & 0x7fff
 
+def get_termux_gps():
+    try:
+        log_message("Termux:API üzerinden GPS verisi sorgulanıyor...")
+        # Run termux-location command with 10 second timeout
+        result = subprocess.run(['termux-location'], capture_output=True, text=True, timeout=12)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            lat = data.get('latitude')
+            lon = data.get('longitude')
+            if lat is not None and lon is not None:
+                log_message(f"Termux GPS başarıyla alındı: {lat}, {lon}")
+                return float(lat), float(lon)
+        else:
+            log_message(f"Termux:API hata döndürdü (Kod {result.returncode}): {result.stderr.strip()}")
+    except subprocess.TimeoutExpired:
+        log_message("Termux GPS sorgusu zaman aşımına uğradı (12 saniye).")
+    except Exception as e:
+        log_message(f"Termux GPS okuma hatası: {e}")
+    return None
+
 def send_beacon(config):
     callsign = config['callsign'].upper()
     passcode = config.get('passcode')
@@ -54,8 +75,21 @@ def send_beacon(config):
     server = config.get('server', 'rotate.aprs2.net')
     port = int(config.get('port', 14580))
     
-    lat = float(config['latitude'])
-    lon = float(config['longitude'])
+    lat = None
+    lon = None
+    
+    # Check if Termux GPS is requested
+    if config.get('use_termux_gps', False):
+        gps_coords = get_termux_gps()
+        if gps_coords:
+            lat, lon = gps_coords
+        else:
+            log_message("UYARI: Termux GPS alınamadı. config.json içerisindeki sabit konuma dönülüyor.")
+            
+    if lat is None or lon is None:
+        lat = float(config['latitude'])
+        lon = float(config['longitude'])
+        
     symbol_table = config.get('symbol_table', '/')
     symbol_code = config.get('symbol_code', '-')
     comment = config.get('comment', 'APRS Background Beacon')
