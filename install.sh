@@ -175,33 +175,6 @@ while true; do
     echo -e "${C_RED}Hata: Aralık en az 1 dakika olmalıdır!${C_RESET}"
 done
 
-# 7. Gelişmiş/Profesyonel Özellikler
-echo -e "\n${C_CYAN}${C_BOLD}7. Gelişmiş/Profesyonel APRS Özellikleri:${C_RESET}"
-
-# 7.1 Telemetri
-read -p "  Sistem Telemetrisi etkinleştirilsin mi? (aprs.fi'de CPU Sıcaklığı, RAM, Disk grafikleri oluşturur) [y/N]: " ENABLE_TELEMETRY
-ENABLE_TELEMETRY=$(echo "$ENABLE_TELEMETRY" | tr 'A-Z' 'a-z' | xargs)
-SEND_TELEMETRY="false"
-if [ "$ENABLE_TELEMETRY" = "y" ]; then
-    SEND_TELEMETRY="true"
-fi
-
-# 7.2 Drone Animasyonu
-read -p "  İstasyonunuz etrafında dönen hareketli bir 'Drone' (Nesne Animasyonu) simüle edilsin mi? [y/N]: " ENABLE_ORBIT
-ENABLE_ORBIT=$(echo "$ENABLE_ORBIT" | tr 'A-Z' 'a-z' | xargs)
-ORBIT_ANIMATION="false"
-if [ "$ENABLE_ORBIT" = "y" ]; then
-    ORBIT_ANIMATION="true"
-fi
-
-# 7.3 Mesaj Botu
-read -p "  İnteraktif Mesaj Botu etkinleştirilsin mi? (Gelen 'ping', 'status', 'uptime' mesajlarına otomatik yanıt verir) [y/N]: " ENABLE_BOT
-ENABLE_BOT=$(echo "$ENABLE_BOT" | tr 'A-Z' 'a-z' | xargs)
-INTERACTIVE_BOT="false"
-if [ "$ENABLE_BOT" = "y" ]; then
-    INTERACTIVE_BOT="true"
-fi
-
 # Yapılandırmayı Kaydet
 cat <<EOF > "$INSTALL_DIR/config.json"
 {
@@ -214,9 +187,6 @@ cat <<EOF > "$INSTALL_DIR/config.json"
     "symbol_code": "$SYMBOL_CODE",
     "comment": "$COMMENT",
     "interval_minutes": $INTERVAL_MINUTES,
-    "send_telemetry": $SEND_TELEMETRY,
-    "orbit_animation": $ORBIT_ANIMATION,
-    "interactive_bot": $INTERACTIVE_BOT,
     "server": "rotate.aprs2.net",
     "port": 14580
 }
@@ -259,7 +229,7 @@ else
 fi
 
 # Linux systemd işlemleri
-echo -e "\n8. Başlangıç ayarları:"
+echo -e "\n7. Başlangıç ayarları:"
 read -p "Sistem açılışında otomatik başlasın mı? [Y/n]: " AUTO_START
 AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
 
@@ -300,13 +270,11 @@ if [ "$AUTO_START" != "n" ]; then
     echo -e "${C_BOLD}Simge          :${C_RESET} $SYMBOL_TABLE$SYMBOL_CODE"
     echo -e "${C_BOLD}Mesaj          :${C_RESET} $COMMENT"
     echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
-    echo -e "${C_BOLD}Telemetri      :${C_RESET} $([ "$SEND_TELEMETRY" = "true" ] && echo "Aktif" || echo "Pasif")"
-    echo -e "${C_BOLD}Drone Animasyon:${C_RESET} $([ "$ORBIT_ANIMATION" = "true" ] && echo "Aktif" || echo "Pasif")"
-    echo -e "${C_BOLD}Mesaj Botu     :${C_RESET} $([ "$INTERACTIVE_BOT" = "true" ] && echo "Aktif" || echo "Pasif")"
     echo -e "${C_BOLD}Durum          :${C_RESET} Arka planda çalışıyor (Systemd)"
     echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Bilgisayar açılışında otomatik başlayacak (Linger: Aktif)"
     echo -e "----------------------------------------------------------------"
-    echo -e "${C_CYAN}Canlı log takibi:${C_RESET}             journalctl --user -u aprs-beacon -f"
+    echo -e "${C_CYAN}Canlı log takibi (systemd):${C_RESET}  journalctl --user -u aprs-beacon -f"
+    echo -e "${C_CYAN}Canlı log takibi (evrensel):${C_RESET} tail -f $INSTALL_DIR/aprs_beacon.log"
     echo -e "${C_CYAN}Servisi durdur:${C_RESET}              systemctl --user stop aprs-beacon"
     echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
 else

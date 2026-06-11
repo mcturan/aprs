@@ -149,30 +149,6 @@ while ($true) {
     Write-Host "Hata: Aralık en az 1 dakika olmalıdır!" -ForegroundColor Red
 }
 
-# 7. Gelişmiş/Profesyonel Özellikler
-Write-Host "`n7. Gelişmiş/Profesyonel APRS Özellikleri:" -ForegroundColor Cyan
-
-# 7.1 Telemetri
-$enableTelemetry = (Read-Host "  Sistem Telemetrisi etkinleştirilsin mi? (aprs.fi'de CPU Sıcaklığı, RAM, Disk grafikleri oluşturur) [y/N]").Trim().ToLower()
-$sendTelemetry = "false"
-if ($enableTelemetry -eq "y") {
-    $sendTelemetry = "true"
-}
-
-# 7.2 Drone Animasyonu
-$enableOrbit = (Read-Host "  İstasyonunuz etrafında dönen hareketli bir 'Drone' (Nesne Animasyonu) simüle edilsin mi? [y/N]").Trim().ToLower()
-$orbitAnimation = "false"
-if ($enableOrbit -eq "y") {
-    $orbitAnimation = "true"
-}
-
-# 7.3 Mesaj Botu
-$enableBot = (Read-Host "  İnteraktif Mesaj Botu etkinleştirilsin mi? (Gelen 'ping', 'status', 'uptime' mesajlarına otomatik yanıt verir) [y/N]").Trim().ToLower()
-$interactiveBot = "false"
-if ($enableBot -eq "y") {
-    $interactiveBot = "true"
-}
-
 # Yapılandırmayı JSON olarak kaydet
 $configJson = @"
 {
@@ -185,9 +161,6 @@ $configJson = @"
     "symbol_code": "$symbolCode",
     "comment": "$comment",
     "interval_minutes": $interval,
-    "send_telemetry": $sendTelemetry,
-    "orbit_animation": $orbitAnimation,
-    "interactive_bot": $interactiveBot,
     "server": "rotate.aprs2.net",
     "port": 14580
 }
@@ -204,8 +177,8 @@ if (Test-Path ".\aprs_beacon.py") {
     Exit
 }
 
-# 8. Başlangıç Ayarı
-$autoStart = (Read-Host "`n8. Sistem açılışında otomatik başlasın mı? [Y/n]").Trim().ToLower()
+# 7. Başlangıç Ayarı
+$autoStart = (Read-Host "`n7. Sistem açılışında otomatik başlasın mı? [Y/n]").Trim().ToLower()
 
 # Windows Görev Zamanlayıcıya ekleme (Sadece kullanıcı oturum açtığında arka planda çalıştır)
 if ($autoStart -ne "n") {
@@ -227,11 +200,10 @@ if ($autoStart -ne "n") {
     Write-Host "Simge          : $symbolTable$symbolCode"
     Write-Host "Durum          : Arka planda sessizce çalışacak (Görev Zamanlayıcı)"
     Write-Host "Gönderim Sıklığı: $interval dakikada bir"
-    Write-Host "Telemetri      : $(if ($sendTelemetry -eq "true") { "Aktif" } else { "Pasif" })"
-    Write-Host "Drone Animasyon: $(if ($orbitAnimation -eq "true") { "Aktif" } else { "Pasif" })"
-    Write-Host "Mesaj Botu     : $(if ($interactiveBot -eq "true") { "Aktif" } else { "Pasif" })"
     Write-Host "Otomatik Başlama: Kullanıcı oturum açtığında otomatik başlayacak."
     Write-Host "----------------------------------------------------------------"
+    Write-Host "Canlı Log Takibi (PowerShell):"
+    Write-Host "  Get-Content -Path `"\`$env:USERPROFILE\.aprs-beacon\aprs_beacon.log\`" -Wait -Tail 10"
     Write-Host "Manuel başlatmak için:  Start-ScheduledTask -TaskName 'APRSBeacon'"
     Write-Host "Durdurmak için:         Stop-ScheduledTask -TaskName 'APRSBeacon'"
     Write-Host "================================================================" -ForegroundColor Green
