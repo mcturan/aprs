@@ -100,9 +100,13 @@ python3 ~/.aprs-beacon/aprs_manager.py gui
 Terminal üzerinden (CLI) yönetim komutları:
 - Profilleri Listele: `python3 ~/.aprs-beacon/aprs_manager.py list`
 - Yeni Profil Ekle: `python3 ~/.aprs-beacon/aprs_manager.py create`
+- Profil Düzenle (Güncelle): `python3 ~/.aprs-beacon/aprs_manager.py edit`
 - Profili Başlat: `python3 ~/.aprs-beacon/aprs_manager.py start <profil_adi>`
 - Profili Durdur: `python3 ~/.aprs-beacon/aprs_manager.py stop <profil_adi>`
 - Profili Sil: `python3 ~/.aprs-beacon/aprs_manager.py delete <profil_adi>`
+- Ayarları Dışa Aktar: `python3 ~/.aprs-beacon/aprs_manager.py export [yedek_yolu.json]`
+- Ayarları İçe Aktar: `python3 ~/.aprs-beacon/aprs_manager.py import <yedek_yolu.json>`
+- Uygulamayı Güncelle (Git Pull): `python3 ~/.aprs-beacon/aprs_manager.py update`
 
 ---
 

@@ -28,6 +28,7 @@ $logsDir = "$installDir\logs"
 if (!(Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null }
 if (!(Test-Path $profilesDir)) { New-Item -ItemType Directory -Force -Path $profilesDir | Out-Null }
 if (!(Test-Path $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
+$pwd.Path | Out-File -FilePath "$installDir\.repo_path" -Encoding utf8
 
 # GUI Bağımlılıkları Kurulumu (Windows için)
 Write-Host "[i] Görsel arayüz için kütüphaneler kontrol ediliyor (pystray, Pillow)..." -ForegroundColor Blue

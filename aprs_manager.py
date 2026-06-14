@@ -26,7 +26,7 @@ IS_LINUX = not IS_ANDROID and (sys.platform.startswith('linux') or sys.platform.
 GUI_AVAILABLE = True
 try:
     import tkinter as tk
-    from tkinter import ttk, messagebox, simpledialog
+    from tkinter import ttk, messagebox, simpledialog, filedialog
     from PIL import Image, ImageDraw
     import pystray
 except ImportError:
@@ -154,6 +154,67 @@ def remove_profile_service(profile_name):
     if IS_WINDOWS:
         cmd = f'Unregister-ScheduledTask -TaskName "APRSBeacon-{profile_name}" -Confirm:$false'
         subprocess.run(['powershell', '-Command', cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def self_update():
+    repo_path_file = os.path.join(BASE_DIR, '.repo_path')
+    if not os.path.exists(repo_path_file):
+        return False, "Hata: Kurulum kaynak dizini (.repo_path) bulunamadı. Lütfen kurulum sihirbazını elle çalıştırın."
+        
+    try:
+        with open(repo_path_file, 'r', encoding='utf-8') as f:
+            repo_path = f.read().strip()
+            
+        if not os.path.exists(repo_path):
+            return False, f"Hata: Kaynak dizin ({repo_path}) mevcut değil."
+            
+        # Run git pull in the repository path
+        if not IS_WINDOWS:
+            res = subprocess.run(['git', 'pull'], cwd=repo_path, capture_output=True, text=True)
+            if res.returncode != 0:
+                return False, f"Git Pull Hatası:\n{res.stderr}"
+        else:
+            res = subprocess.run(['powershell', '-Command', 'git pull'], cwd=repo_path, capture_output=True, text=True)
+            if res.returncode != 0:
+                return False, f"Git Pull Hatası:\n{res.stderr}"
+                
+        # Copy files
+        import shutil
+        shutil.copy2(os.path.join(repo_path, 'aprs_beacon.py'), os.path.join(BASE_DIR, 'aprs_beacon.py'))
+        shutil.copy2(os.path.join(repo_path, 'aprs_manager.py'), os.path.join(BASE_DIR, 'aprs_manager.py'))
+        
+        return True, "Uygulama başarıyla güncellendi! Yeni özellikleri görmek için lütfen uygulamayı kapatıp yeniden açın."
+    except Exception as e:
+        return False, f"Güncelleme Hatası: {e}"
+
+def export_settings(export_file_path):
+    try:
+        profiles = get_profiles()
+        backup_data = {
+            "version": "1.0",
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "profiles": profiles
+        }
+        with open(export_file_path, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, indent=4)
+        return True, f"Ayarlar başarıyla dışa aktarıldı: {export_file_path}"
+    except Exception as e:
+        return False, f"Dışa aktarma hatası: {e}"
+
+def import_settings(import_file_path):
+    try:
+        with open(import_file_path, 'r', encoding='utf-8') as f:
+            backup_data = json.load(f)
+            
+        profiles = backup_data.get("profiles", {})
+        if not profiles:
+            return False, "Hata: Seçilen dosyada profil kaydı bulunamadı."
+            
+        for name, data in profiles.items():
+            save_profile(name, data)
+            
+        return True, f"{len(profiles)} adet profil başarıyla içe aktarıldı."
+    except Exception as e:
+        return False, f"İçe aktarma hatası: {e}"
 
 # --- Profile Management Helpers ---
 def get_profiles():
@@ -303,6 +364,76 @@ def cli_stop(name):
     stop_profile_service(name)
     print(f"[+] '{name}' profili durduruldu.")
 
+def cli_edit():
+    print("\n=== Profil Bilgilerini Güncelle ===")
+    profiles = get_profiles()
+    if not profiles:
+        print("Güncellenebilecek herhangi bir profil bulunamadı.")
+        return
+        
+    name = input("Güncellemek istediğiniz profil adı: ").strip().lower()
+    if name not in profiles:
+        print(f"Hata: '{name}' adında bir profil bulunamadı.")
+        return
+        
+    data = profiles[name]
+    print(f"\nGüncelleniyor: {name.upper()}")
+    print("İpucu: Mevcut değeri korumak için boş bırakıp Enter'a basın.")
+    
+    callsign = input(f"Çağrı İşareti ({data.get('callsign')}): ").strip().upper() or data.get('callsign')
+    
+    passcode_in = input(f"Passcode ({data.get('passcode')}): ").strip()
+    passcode = int(passcode_in) if passcode_in else data.get('passcode')
+    
+    try:
+        lat_in = input(f"Enlem ({data.get('latitude')}): ").strip()
+        lat = float(lat_in) if lat_in else data.get('latitude')
+        
+        lon_in = input(f"Boylam ({data.get('longitude')}): ").strip()
+        lon = float(lon_in) if lon_in else data.get('longitude')
+    except ValueError:
+        print("Hata: Koordinatlar sayısal olmalıdır. İşlem iptal edildi.")
+        return
+        
+    comment = input(f"Durum Mesajı ({data.get('comment')}): ").strip() or data.get('comment')
+    symbol = input(f"Simge Karakteri ({data.get('symbol_code')}): ").strip() or data.get('symbol_code')
+    
+    try:
+        interval_in = input(f"Sıklık ({data.get('interval_minutes')} dk): ").strip()
+        interval = int(interval_in) if interval_in else data.get('interval_minutes')
+    except ValueError:
+        interval = data.get('interval_minutes')
+        
+    thursday_in = input(f"APRS Perşembe ({'Etkin' if data.get('aprs_thursday', False) else 'Pasif'}) [y/N]: ").strip().lower()
+    aprs_thursday = data.get('aprs_thursday', False)
+    if thursday_in:
+        aprs_thursday = thursday_in == 'y'
+        
+    updated_data = {
+        "callsign": callsign,
+        "passcode": passcode,
+        "latitude": lat,
+        "longitude": lon,
+        "use_termux_gps": False,
+        "symbol_table": "/",
+        "symbol_code": symbol,
+        "comment": comment,
+        "interval_minutes": interval,
+        "aprs_thursday": aprs_thursday,
+        "server": "rotate.aprs2.net",
+        "port": 14580
+    }
+    
+    save_profile(name, updated_data)
+    print(f"[+] '{name}' profili başarıyla güncellendi.")
+    
+    if is_profile_running(name):
+        print("[i] Profil arka planda çalışıyor, değişikliklerin yansıması için yeniden başlatılıyor...")
+        stop_profile_service(name)
+        time.sleep(0.5)
+        start_profile_service(name)
+        print("[+] Profil başarıyla yeniden başlatıldı.")
+
 # --- GUI Mode Implementation ---
 class APRSManagerGUI:
     def __init__(self, root):
@@ -365,9 +496,30 @@ class APRSManagerGUI:
         # Add Profile Button
         add_btn = tk.Button(header_frame, text="+ Yeni Profil Ekle", font=("Outfit", 10, "bold"), bg="#a6e3a1", fg="#11111b", 
                             relief="flat", activebackground="#89b4fa", command=self.open_add_profile_dialog)
-        add_btn.pack(side="right", padx=20, pady=15)
+        add_btn.pack(side="right", padx=(5, 20), pady=15)
         add_btn.bind("<Enter>", lambda e: add_btn.configure(bg="#89b4fa"))
         add_btn.bind("<Leave>", lambda e: add_btn.configure(bg="#a6e3a1"))
+
+        # Update Button
+        update_btn = tk.Button(header_frame, text="🔄 Güncelle", font=("Outfit", 10, "bold"), bg="#f9e2af", fg="#11111b",
+                              relief="flat", command=self.trigger_self_update)
+        update_btn.pack(side="right", padx=5, pady=15)
+        update_btn.bind("<Enter>", lambda e: update_btn.configure(bg="#f38ba8"))
+        update_btn.bind("<Leave>", lambda e: update_btn.configure(bg="#f9e2af"))
+
+        # Import Button
+        import_btn = tk.Button(header_frame, text="📥 İçe Aktar", font=("Outfit", 10, "bold"), bg="#89b4fa", fg="#11111b",
+                              relief="flat", command=self.trigger_import)
+        import_btn.pack(side="right", padx=5, pady=15)
+        import_btn.bind("<Enter>", lambda e: import_btn.configure(bg="#b4befe"))
+        import_btn.bind("<Leave>", lambda e: import_btn.configure(bg="#89b4fa"))
+
+        # Export Button
+        export_btn = tk.Button(header_frame, text="📤 Dışa Aktar", font=("Outfit", 10, "bold"), bg="#cba6f7", fg="#11111b",
+                              relief="flat", command=self.trigger_export)
+        export_btn.pack(side="right", padx=5, pady=15)
+        export_btn.bind("<Enter>", lambda e: export_btn.configure(bg="#f5c2e7"))
+        export_btn.bind("<Leave>", lambda e: export_btn.configure(bg="#cba6f7"))
         
         # Main content area (scrollable canvas for profiles list)
         self.main_container = tk.Frame(self.root, bg="#1e1e2e")
@@ -466,6 +618,13 @@ class APRSManagerGUI:
         log_btn.bind("<Enter>", lambda e, b=log_btn: b.configure(bg="#585b70"))
         log_btn.bind("<Leave>", lambda e, b=log_btn: b.configure(bg="#45475a"))
         
+        # Edit Profile
+        edit_btn = tk.Button(btn_frame, text="Düzenle", font=("Outfit", 9, "bold"), bg="#313244", fg="#f9e2af", 
+                             relief="flat", width=9, command=lambda n=name: self.open_add_profile_dialog(n))
+        edit_btn.pack(side="right", padx=2)
+        edit_btn.bind("<Enter>", lambda e, b=edit_btn: b.configure(bg="#f9e2af", fg="#11111b"))
+        edit_btn.bind("<Leave>", lambda e, b=edit_btn: b.configure(bg="#313244", fg="#f9e2af"))
+        
         # Delete Profile
         del_btn = tk.Button(btn_frame, text="Sil", font=("Outfit", 9, "bold"), bg="#313244", fg="#f38ba8", 
                             relief="flat", width=9, command=lambda n=name: self.delete_profile(n))
@@ -524,10 +683,10 @@ class APRSManagerGUI:
             
         update_logs()
 
-    def open_add_profile_dialog(self):
+    def open_add_profile_dialog(self, edit_profile_name=None):
         # Custom Form Window
         form = tk.Toplevel(self.root)
-        form.title("Yeni Profil Ekle")
+        form.title("Yeni Profil Ekle" if not edit_profile_name else f"Profil Düzenle: {edit_profile_name}")
         form.geometry("400x570")
         form.configure(bg="#1e1e2e")
         form.resizable(False, False)
@@ -537,7 +696,8 @@ class APRSManagerGUI:
         form.grab_set()
         
         # Form layout
-        title = tk.Label(form, text="Yeni APRS Profil Ayarları", font=("Outfit", 12, "bold"), fg="#89b4fa", bg="#1e1e2e")
+        title_lbl_text = "Yeni APRS Profil Ayarları" if not edit_profile_name else f"APRS Profil Ayarlarını Düzenle"
+        title = tk.Label(form, text=title_lbl_text, font=("Outfit", 12, "bold"), fg="#89b4fa", bg="#1e1e2e")
         title.pack(pady=15)
         
         fields_frame = tk.Frame(form, bg="#1e1e2e")
@@ -572,13 +732,27 @@ class APRSManagerGUI:
                                      activeforeground="#cdd6f4", selectcolor="#313244")
         thursday_cb.grid(row=len(labels)*2, column=0, sticky="w", pady=(10, 5))
         
-        # Set default values
-        entries['comment'].insert(0, "APRS Background Beacon")
-        entries['symbol'].insert(0, "X")
-        entries['interval'].insert(0, "5")
+        # Set default values or load edit values
+        if edit_profile_name:
+            profiles = get_profiles()
+            data = profiles[edit_profile_name]
+            entries['name'].insert(0, edit_profile_name)
+            entries['name'].configure(state='disabled')
+            entries['callsign'].insert(0, data.get('callsign', ''))
+            entries['passcode'].insert(0, str(data.get('passcode', '')))
+            entries['latitude'].insert(0, str(data.get('latitude', '')))
+            entries['longitude'].insert(0, str(data.get('longitude', '')))
+            entries['comment'].insert(0, data.get('comment', ''))
+            entries['symbol'].insert(0, data.get('symbol_code', 'X'))
+            entries['interval'].insert(0, str(data.get('interval_minutes', '5')))
+            thursday_var.set(data.get('aprs_thursday', False))
+        else:
+            entries['comment'].insert(0, "APRS Background Beacon")
+            entries['symbol'].insert(0, "X")
+            entries['interval'].insert(0, "5")
         
         def save_new():
-            name = entries['name'].get().strip().lower()
+            name = edit_profile_name if edit_profile_name else entries['name'].get().strip().lower()
             callsign = entries['callsign'].get().strip().upper()
             passcode_in = entries['passcode'].get().strip()
             lat_in = entries['latitude'].get().strip()
@@ -591,10 +765,11 @@ class APRSManagerGUI:
                 messagebox.showerror("Hata", "Lütfen zorunlu alanları (Profil Adı, Çağrı İşareti, Koordinatlar) doldurun.", parent=form)
                 return
                 
-            profiles = get_profiles()
-            if name in profiles:
-                messagebox.showerror("Hata", f"'{name}' adında bir profil zaten mevcut.", parent=form)
-                return
+            if not edit_profile_name:
+                profiles = get_profiles()
+                if name in profiles:
+                    messagebox.showerror("Hata", f"'{name}' adında bir profil zaten mevcut.", parent=form)
+                    return
                 
             try:
                 lat = float(lat_in)
@@ -637,10 +812,19 @@ class APRSManagerGUI:
             self.refresh_profiles()
             self.update_tray_menu()
             
-            if messagebox.askyesno("Başlat", f"'{name}' profili başarıyla oluşturuldu. Hemen başlatılsın mı?"):
-                start_profile_service(name)
-                self.refresh_profiles()
-                self.update_tray_menu()
+            if edit_profile_name:
+                if is_profile_running(name):
+                    stop_profile_service(name)
+                    time.sleep(0.5)
+                    start_profile_service(name)
+                    self.refresh_profiles()
+                    self.update_tray_menu()
+                messagebox.showinfo("Başarılı", f"'{name}' profili başarıyla güncellendi.")
+            else:
+                if messagebox.askyesno("Başlat", f"'{name}' profili başarıyla oluşturuldu. Hemen başlatılsın mı?"):
+                    start_profile_service(name)
+                    self.refresh_profiles()
+                    self.update_tray_menu()
 
         save_btn = tk.Button(form, text="Profili Kaydet", font=("Outfit", 10, "bold"), bg="#a6e3a1", fg="#11111b", 
                              relief="flat", command=save_new)
@@ -731,6 +915,42 @@ class APRSManagerGUI:
                 except:
                     pass
 
+    def trigger_self_update(self):
+        if messagebox.askyesno("Güncelleme", "Uygulamayı en son GitHub sürümüne güncellemek istiyor musunuz?"):
+            success, msg = self_update()
+            if success:
+                messagebox.showinfo("Başarılı", msg)
+            else:
+                messagebox.showerror("Hata", msg)
+
+    def trigger_export(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON Files", "*.json")],
+            title="APRS Ayarlarını Dışa Aktar",
+            initialfile=f"aprs_backup_{datetime.now().strftime('%Y%m%d')}.json"
+        )
+        if file_path:
+            success, msg = export_settings(file_path)
+            if success:
+                messagebox.showinfo("Başarılı", msg)
+            else:
+                messagebox.showerror("Hata", msg)
+
+    def trigger_import(self):
+        file_path = filedialog.askopenfilename(
+            filetypes=[("JSON Files", "*.json")],
+            title="APRS Ayarlarını İçe Aktar"
+        )
+        if file_path:
+            success, msg = import_settings(file_path)
+            if success:
+                messagebox.showinfo("Başarılı", msg)
+                self.refresh_profiles()
+                self.update_tray_menu()
+            else:
+                messagebox.showerror("Hata", msg)
+
 # --- CLI Interactive Mode & Helper ---
 def cli_show_logs_interactive(profile_name):
     profiles = get_profiles()
@@ -770,10 +990,14 @@ def cli_interactive_menu():
         print("4) Profil Durdur")
         print("5) Profil Sil")
         print("6) Canlı Log İzleyici")
-        print("7) Çıkış")
-        print("-" * 50)
+        print("7) Profil Düzenle (Güncelle)")
+        print("8) Ayarları Dışa Aktar (Yedekle)")
+        print("9) Ayarları İçe Aktar (Geri Yükle)")
+        print("10) Uygulamayı Güncelle")
+        print("11) Çıkış")
+        print("-" * 55)
         
-        choice = input("Seçiminiz [1-7]: ").strip()
+        choice = input("Seçiminiz [1-11]: ").strip()
         
         if choice == '1':
             cli_list()
@@ -795,24 +1019,60 @@ def cli_interactive_menu():
             name = input("Logları izlenecek profil adı: ").strip().lower()
             if name:
                 cli_show_logs_interactive(name)
-        elif choice == '7' or choice.lower() == 'exit':
+        elif choice == '7':
+            cli_edit()
+        elif choice == '8':
+            export_path = input("Dışa aktarılacak dosya yolu [Varsayılan: ~/aprs_backup.json]: ").strip()
+            if not export_path:
+                export_path = os.path.expanduser("~/aprs_backup.json")
+            success, msg = export_settings(export_path)
+            print(f"[+] {msg}" if success else f"[-] {msg}")
+        elif choice == '9':
+            import_path = input("İçe aktarılacak JSON dosya yolu: ").strip()
+            if import_path:
+                success, msg = import_settings(import_path)
+                print(f"[+] {msg}" if success else f"[-] {msg}")
+        elif choice == '10':
+            print("[i] Güncelleme işlemi başlatılıyor...")
+            success, msg = self_update()
+            print(f"[+] {msg}" if success else f"[-] {msg}")
+        elif choice == '11' or choice.lower() == 'exit':
             print("Çıkış yapılıyor...")
             break
         else:
-            print("Geçersiz seçim. Lütfen 1-7 arasında bir değer girin.")
+            print("Geçersiz seçim. Lütfen 1-11 arasında bir değer girin.")
 
 # --- Entry Point / Argument Parsing ---
 def main():
     parser = argparse.ArgumentParser(description="APRS Multi-Beacon Management Utility")
-    parser.add_argument('command', nargs='?', choices=['list', 'start', 'stop', 'create', 'delete', 'gui'], default='gui',
-                        help="Command to run (list, start, stop, create, delete, gui)")
-    parser.add_argument('profile_name', nargs='?', help="Target profile name for start/stop/delete commands")
+    parser.add_argument('command', nargs='?', choices=['list', 'start', 'stop', 'create', 'delete', 'edit', 'export', 'import', 'update', 'gui'], default='gui',
+                        help="Command to run (list, start, stop, create, delete, edit, export, import, update, gui)")
+    parser.add_argument('profile_name', nargs='?', help="Target profile name or file path for commands")
     args = parser.parse_args()
     
     if args.command == 'list':
         cli_list()
     elif args.command == 'create':
         cli_create()
+    elif args.command == 'edit':
+        cli_edit()
+    elif args.command == 'update':
+        print("[i] Güncelleme işlemi başlatılıyor...")
+        success, msg = self_update()
+        print(f"[+] {msg}" if success else f"[-] {msg}")
+    elif args.command == 'export':
+        path = args.profile_name
+        if not path:
+            path = os.path.expanduser("~/aprs_backup.json")
+        success, msg = export_settings(path)
+        print(f"[+] {msg}" if success else f"[-] {msg}")
+    elif args.command == 'import':
+        path = args.profile_name
+        if not path:
+            print("Hata: İçe aktarılacak dosya yolunu belirtmelisiniz. (Örn: aprs_manager import backup.json)")
+        else:
+            success, msg = import_settings(path)
+            print(f"[+] {msg}" if success else f"[-] {msg}")
     elif args.command == 'delete':
         if not args.profile_name:
             print("Hata: Hangi profili silmek istediğinizi belirtmelisiniz. (Örn: aprs_manager delete profil_adi)")

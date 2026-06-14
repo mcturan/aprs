@@ -38,6 +38,7 @@ INSTALL_DIR="$HOME/.aprs-beacon"
 PROFILES_DIR="$INSTALL_DIR/profiles"
 LOGS_DIR="$INSTALL_DIR/logs"
 mkdir -p "$PROFILES_DIR" "$LOGS_DIR"
+echo "$(pwd)" > "$INSTALL_DIR/.repo_path"
 
 # Android / Termux Tespiti
 IS_ANDROID=false
