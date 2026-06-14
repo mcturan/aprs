@@ -418,7 +418,7 @@ class APRSManagerGUI:
         
         status_dot = tk.Canvas(card_header, width=12, height=12, bg="#252538", highlightthickness=0)
         status_dot.pack(side="right", padx=(5, 0))
-        status_dot.create_ellipse(1, 1, 11, 11, fill=status_color, outline="")
+        status_dot.create_oval(1, 1, 11, 11, fill=status_color, outline="")
         
         status_lbl = tk.Label(card_header, text=status_text, font=("Outfit", 10, "bold"), fg=status_color, bg="#252538")
         status_lbl.pack(side="right")
