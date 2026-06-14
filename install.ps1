@@ -3,7 +3,7 @@
 # çalışacak şekilde APRS beacon servisini kurar.
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "       Windows APRS Beacon Kurulum Sihirbazı" -ForegroundColor Cyan -Bold
+Write-Host "       Windows APRS Multi-Profile Beacon Sihirbazı" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "Bu sihirbaz, APRS beacon'ınızı yapılandıracak ve bilgisayarınız"
 Write-Host "başladığında arka planda otomatik çalışması için Görev Zamanlayıcı'ya ekleyecektir."
@@ -22,8 +22,34 @@ try {
 }
 
 $installDir = "$env:USERPROFILE\.aprs-beacon"
-if (!(Test-Path $installDir)) {
-    New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+$profilesDir = "$installDir\profiles"
+$logsDir = "$installDir\logs"
+
+if (!(Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null }
+if (!(Test-Path $profilesDir)) { New-Item -ItemType Directory -Force -Path $profilesDir | Out-Null }
+if (!(Test-Path $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
+
+# GUI Bağımlılıkları Kurulumu (Windows için)
+Write-Host "[i] Görsel arayüz için kütüphaneler kontrol ediliyor (pystray, Pillow)..." -ForegroundColor Blue
+try {
+    python -c "import pystray, PIL" 2>$null
+    Write-Host "[+] Gerekli paketler kurulu." -ForegroundColor Green
+} catch {
+    Write-Host "[!] Gerekli kütüphaneler kuruluyor (pystray, Pillow)..." -ForegroundColor Yellow
+    pip install pystray Pillow --quiet
+}
+
+# 0. Profil Adı
+Write-Host "`n=== 0. Profil Yapılandırması ===" -ForegroundColor Cyan
+while ($true) {
+    $profileName = (Read-Host "Kurulacak Profil Adı [Varsayılan: default]").Trim().ToLower()
+    if ($profileName -eq "") {
+        $profileName = "default"
+    }
+    if ($profileName -match '^[a-z0-9_-]+$') {
+        break
+    }
+    Write-Host "Hata: Profil adı sadece küçük harf, rakam, tire veya alt çizgi içerebilir!" -ForegroundColor Red
 }
 
 # 1. Çağrı İşareti
@@ -54,7 +80,7 @@ if ($passcode -eq "") {
 # 3. Mesaj
 Write-Host "`n3. Durum Mesajı Ayarı:" -ForegroundColor Cyan
 Write-Host "  İpucu: Frekans ve ton bilgisi eklemek için mesajın başına ekleyin (Örn: 145.550MHz T088)" -ForegroundColor Yellow
-Write-Host "  İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://example.com | ARC)" -ForegroundColor Yellow
+Write-Host "  İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://example.com)" -ForegroundColor Yellow
 $comment = (Read-Host "Durum Mesajınız [Varsayılan: Windows APRS Beacon]").Trim()
 if ($comment -eq "") {
     $comment = "Windows APRS Beacon"
@@ -88,7 +114,6 @@ $longitude = ""
 
 if ($autoLoc -ne "n") {
     Write-Host "[i] Konumunuz internet üzerinden otomatik tespit ediliyor..." -ForegroundColor Blue
-    # Try multiple geolocation APIs
     $apis = @(
         "http://ip-api.com/json",
         "https://ipapi.co/json/"
@@ -122,14 +147,14 @@ if ($latitude -eq "" -or $longitude -eq "") {
         Start-Process "https://www.openstreetmap.org"
     } catch {}
 
-    Write-Host "[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan Taksim Meydanı gibi konumunuzu bulun):" -ForegroundColor Yellow
+    Write-Host "[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan enlem/boylam kopyalayın):" -ForegroundColor Yellow
     while ($true) {
-        $latitude = (Read-Host "  Enlem (Latitude, Örn: 41.037002 - Taksim Meydanı)").Trim()
+        $latitude = (Read-Host "  Enlem (Latitude, Örn: 41.037002)").Trim()
         if ([double]::TryParse($latitude, [ref]0.0)) { break }
         Write-Host "Hata: Geçersiz enlem değeri!" -ForegroundColor Red
     }
     while ($true) {
-        $longitude = (Read-Host "  Boylam (Longitude, Örn: 28.985012 - Taksim Meydanı)").Trim()
+        $longitude = (Read-Host "  Boylam (Longitude, Örn: 28.985012)").Trim()
         if ([double]::TryParse($longitude, [ref]0.0)) { break }
         Write-Host "Hata: Geçersiz boylam değeri!" -ForegroundColor Red
     }
@@ -166,15 +191,39 @@ $configJson = @"
 }
 "@
 
-$configJson | Out-File -FilePath "$installDir\config.json" -Encoding utf8
-Write-Host "`n[+] Yapılandırma dosyası kaydedildi: $installDir\config.json" -ForegroundColor Green
+$configJson | Out-File -FilePath "$profilesDir\$profileName.json" -Encoding utf8
+Write-Host "`n[+] Yapılandırma dosyası kaydedildi: $profilesDir\$profileName.json" -ForegroundColor Green
 
-# Python dosyasını kopyala
+# Dosyaları kopyala
 if (Test-Path ".\aprs_beacon.py") {
     Copy-Item -Path ".\aprs_beacon.py" -Destination "$installDir\aprs_beacon.py" -Force
 } else {
     Write-Host "[!] Hata: Mevcut klasörde aprs_beacon.py bulunamadı!" -ForegroundColor Red
     Exit
+}
+
+if (Test-Path ".\aprs_manager.py") {
+    Copy-Item -Path ".\aprs_manager.py" -Destination "$installDir\aprs_manager.py" -Force
+}
+
+# Geriye dönük uyumluluk (Eski tekli config varsa taşıyalım)
+if (Test-Path "$installDir\config.json") {
+    Move-Item -Path "$installDir\config.json" -Destination "$profilesDir\default.json" -Force -ErrorAction SilentlyContinue
+    Move-Item -Path "$installDir\aprs_beacon.log" -Destination "$logsDir\default.log" -Force -ErrorAction SilentlyContinue
+}
+
+# Test Gönderimi
+Write-Host "`n[i] Ayarların doğruluğunu onaylamak için test paketi gönderiliyor..." -ForegroundColor Blue
+python "$installDir\aprs_beacon.py" --profile "$profileName" --once
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "[+] Test Başarılı! Konum paketi APRS-IS ağına iletildi." -ForegroundColor Green
+} else {
+    Write-Host "[!] Test Başarısız! Paket sunucuya ulaştırılamadı." -ForegroundColor Red
+    $proceed = (Read-Host "Yine de devam etmek istiyor musunuz? [y/N]").Trim().ToLower()
+    if ($proceed -ne "y") {
+        Write-Host "Kurulum iptal edildi."
+        Exit
+    }
 }
 
 # 7. Başlangıç Ayarı
@@ -185,29 +234,26 @@ if ($autoStart -ne "n") {
     Write-Host "[i] Görev Zamanlayıcı ayarlanıyor..." -ForegroundColor Blue
     
     # pythonw.exe konsol ekranı açmadan Python çalıştırır
-    $action = New-ScheduledTaskAction -Execute "pythonw.exe" -Argument "`"$installDir\aprs_beacon.py`""
+    $action = New-ScheduledTaskAction -Execute "pythonw.exe" -Argument "`"$installDir\aprs_beacon.py`" --profile $profileName"
     $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     
     # Görevi kaydet
-    Register-ScheduledTask -TaskName "APRSBeacon" -Action $action -Trigger $trigger -Settings $settings -Description "APRS Background Beacon" -Force | Out-Null
+    Register-ScheduledTask -TaskName "APRSBeacon-$profileName" -Action $action -Trigger $trigger -Settings $settings -Description "APRS Background Beacon ($profileName)" -Force | Out-Null
     
     Write-Host "`n================================================================" -ForegroundColor Green
-    Write-Host "           APRS WINDOWS SERVİSİ BAŞARIYLA AKTİF EDİLDİ!" -ForegroundColor Green -Bold
+    Write-Host "           APRS WINDOWS SERVİSİ ($profileName) BAŞARIYLA AKTİF EDİLDİ!" -ForegroundColor Green -Bold
     Write-Host "================================================================" -ForegroundColor Green
+    Write-Host "Profil Adı     : $profileName"
     Write-Host "Çağrı İşareti  : $callsign"
-    Write-Host "Konum          : Enlem=$latitude, Boylam=$longitude"
-    Write-Host "Simge          : $symbolTable$symbolCode"
     Write-Host "Durum          : Arka planda sessizce çalışacak (Görev Zamanlayıcı)"
     Write-Host "Gönderim Sıklığı: $interval dakikada bir"
     Write-Host "Otomatik Başlama: Kullanıcı oturum açtığında otomatik başlayacak."
     Write-Host "----------------------------------------------------------------"
+    Write-Host "Yönetim Panelini açmak için: python `"$installDir\aprs_manager.py`" gui"
     Write-Host "Canlı Log Takibi (PowerShell):"
-    Write-Host "  Get-Content -Path `"\`$env:USERPROFILE\.aprs-beacon\aprs_beacon.log\`" -Wait -Tail 10"
-    Write-Host "Manuel başlatmak için:  Start-ScheduledTask -TaskName 'APRSBeacon'"
-    Write-Host "Durdurmak için:         Stop-ScheduledTask -TaskName 'APRSBeacon'"
+    Write-Host "  Get-Content -Path `"$logsDir\$profileName.log`" -Wait -Tail 10"
     Write-Host "================================================================" -ForegroundColor Green
 } else {
-    Write-Host "[!] Görev zamanlayıcı kurulumu atlandı. Manuel çalıştırmak için:" -ForegroundColor Yellow
-    Write-Host "  pythonw.exe `"$installDir\aprs_beacon.py`""
+    Write-Host "[!] Görev zamanlayıcı kurulumu atlandı." -ForegroundColor Yellow
 }

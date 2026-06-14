@@ -9,9 +9,33 @@ import subprocess
 from datetime import datetime
 
 # Path configuration
-CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
-LOG_FILE = os.path.join(CONFIG_DIR, 'aprs_beacon.log')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROFILES_DIR = os.path.join(BASE_DIR, 'profiles')
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+
+os.makedirs(PROFILES_DIR, exist_ok=True)
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+# Geriye dönük uyumluluk için eski yapılandırmayı taşıyalım (Migration)
+old_config = os.path.join(BASE_DIR, 'config.json')
+old_log = os.path.join(BASE_DIR, 'aprs_beacon.log')
+if os.path.exists(old_config):
+    try:
+        import shutil
+        shutil.move(old_config, os.path.join(PROFILES_DIR, 'default.json'))
+        if os.path.exists(old_log):
+            shutil.move(old_log, os.path.join(LOGS_DIR, 'default.log'))
+    except Exception as e:
+        print(f"Migration error: {e}", file=sys.stderr)
+
+# Profil adını belirlemek için sys.argv'yi tarayalım
+PROFILE_NAME = 'default'
+for idx, arg in enumerate(sys.argv):
+    if arg == '--profile' and idx + 1 < len(sys.argv):
+        PROFILE_NAME = sys.argv[idx + 1]
+
+CONFIG_FILE = os.path.join(PROFILES_DIR, f"{PROFILE_NAME}.json")
+LOG_FILE = os.path.join(LOGS_DIR, f"{PROFILE_NAME}.log")
 
 def log_message(message):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -160,6 +184,7 @@ def send_beacon(config):
 def main():
     parser = argparse.ArgumentParser(description="APRS Background Beacon Daemon")
     parser.add_argument('--once', action='store_true', help="Send a single beacon and exit")
+    parser.add_argument('--profile', type=str, default='default', help="Profile name to run")
     args = parser.parse_args()
     
     if not os.path.exists(CONFIG_FILE):

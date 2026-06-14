@@ -80,6 +80,32 @@ Servis ilk paketi gönderdikten sonra, istasyonunuzu canlı olarak [aprs.fi](htt
 
 ---
 
+## 🎛️ Çoklu Profil ve Yönetim Arayüzü (APRS Manager)
+
+Bu güncelleme ile artık aynı anda birden fazla APRS beacon'ını (örneğin farklı SSID veya çağrı işaretleri ile) çalıştırabilir ve bunları görsel arayüzden yönetebilirsiniz.
+
+### Özellikler:
+- **Grafik Arayüz (GUI):** Sisteminizdeki tüm profilleri listeler, aktif/pasif durumlarını gösterir, tek tıklamayla başlatıp durdurmanızı sağlar.
+- **Sistem Tepsisi (Tray Icon):** Uygulama kapatıldığında arka planda sistem tepsisinde (görev çubuğunda) çalışmaya devam eder. Hızlıca durumları izleyebilir ve profilleri kontrol edebilirsiniz.
+- **Log İzleyici:** Her profile ait logları arayüz üzerinden canlı ve anlık olarak takip edebilirsiniz.
+- **CLI Modu:** GUI kütüphaneleri yüklü olmayan veya grafik arayüzü bulunmayan (headless) sunucularda terminal komutları ile tüm profilleri kolayca yönetebilirsiniz.
+
+### Kullanım:
+Yönetim panelini başlatmak için:
+```bash
+python3 ~/.aprs-beacon/aprs_manager.py gui
+```
+*(Uygulama menüsündeki "APRS Multi-Beacon Manager" kısayolunu da kullanabilirsiniz).*
+
+Terminal üzerinden (CLI) yönetim komutları:
+- Profilleri Listele: `python3 ~/.aprs-beacon/aprs_manager.py list`
+- Yeni Profil Ekle: `python3 ~/.aprs-beacon/aprs_manager.py create`
+- Profili Başlat: `python3 ~/.aprs-beacon/aprs_manager.py start <profil_adi>`
+- Profili Durdur: `python3 ~/.aprs-beacon/aprs_manager.py stop <profil_adi>`
+- Profili Sil: `python3 ~/.aprs-beacon/aprs_manager.py delete <profil_adi>`
+
+---
+
 ## 🗑️ Tamamen Kaldırma (Uninstall)
 
 Uygulamayı, arka plan servislerini, zamanlanmış görevleri ve tüm yapılandırma/günlük dosyalarını sisteminizden tamamen temizlemek için aşağıdaki adımları uygulayabilirsiniz:

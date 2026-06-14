@@ -15,10 +15,10 @@ echo "   _   ___  ___  ___   ___                             "
 echo "  /_\ | _ \| _ \/ __| | _ ) ___ __ _ __ ___ _ _        "
 echo " / _ \|  _/|   /\__ \ | _ \/ -_) _\` / _/ _ \ ' \       "
 echo "/_/ \_\_|  |_|_\|___/ |___/\___\__,_\__\___/_||_|      "
-echo -e "       Linux/Android APRS Beacon İnteraktif Kurulum Sihirbazı${C_RESET}\n"
+echo -e "       Linux/Android APRS Multi-Profile Beacon Sihirbazı${C_RESET}\n"
 echo "----------------------------------------------------------------"
-echo "Bu sihirbaz, APRS beacon'ınızı arka planda otomatik"
-echo "çalışacak bir servis olarak kuracaktır."
+echo "Bu sihirbaz, APRS beacon'ınızı arka planda otomatik çalışacak"
+echo "profil(ler) olarak kurup arayüzden yönetmenizi sağlayacaktır."
 echo "----------------------------------------------------------------\n"
 
 # Python3 kontrolü ve kurulumu
@@ -35,7 +35,45 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 INSTALL_DIR="$HOME/.aprs-beacon"
-mkdir -p "$INSTALL_DIR"
+PROFILES_DIR="$INSTALL_DIR/profiles"
+LOGS_DIR="$INSTALL_DIR/logs"
+mkdir -p "$PROFILES_DIR" "$LOGS_DIR"
+
+# Android / Termux Tespiti
+IS_ANDROID=false
+if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
+    IS_ANDROID=true
+fi
+
+# GUI Bağımlılıkları Kurulumu (Linux için)
+if [ "$IS_ANDROID" = false ]; then
+    echo -e "${C_BLUE}[i] Arayüz ve Sistem Tepsisi (pystray, tkinter) kütüphaneleri kontrol ediliyor...${C_RESET}"
+    if ! python3 -c "import tkinter; import pystray" &>/dev/null; then
+        echo -e "${C_YELLOW}[!] Gerekli arayüz kütüphaneleri eksik. Kuruluyor...${C_RESET}"
+        if command -v apt-get &> /dev/null; then
+            echo -e "${C_BLUE}[i] Yükleme için sudo yetkisi istenebilir:${C_RESET}"
+            sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray
+        else
+            echo -e "${C_RED}[!] Hata: Paket yöneticisi (apt-get) bulunamadı. Lütfen python3-tk ve python3-pystray paketlerini kurun.${C_RESET}"
+        fi
+    else
+        echo -e "${C_GREEN}[+] Gerekli arayüz paketleri hazır.${C_RESET}"
+    fi
+fi
+
+# 0. Profil Adı
+echo -e "\n=== 0. Profil Yapılandırması ==="
+while true; do
+    read -p "Kurulacak Profil Adı (Örn: mobil, qth, default) [Varsayılan: default]: " PROFILE_NAME
+    PROFILE_NAME=$(echo "$PROFILE_NAME" | tr 'A-Z' 'a-z' | xargs)
+    if [ -z "$PROFILE_NAME" ]; then
+        PROFILE_NAME="default"
+    fi
+    if [[ "$PROFILE_NAME" =~ ^[a-z0-9_-]+$ ]]; then
+        break
+    fi
+    echo -e "${C_RED}Hata: Profil adı sadece küçük harf, rakam, tire veya alt çizgi içerebilir!${C_RESET}"
+done
 
 # 1. Çağrı İşareti
 while true; do
@@ -67,7 +105,7 @@ fi
 # 3. Mesaj (Comment)
 echo -e "\n3. Durum Mesajı Ayarı:"
 echo -e "  ${C_YELLOW}İpucu: Frekans ve ton bilgisi eklemek için mesajın başına ekleyin (Örn: 145.550MHz T088)${C_RESET}"
-echo -e "  ${C_YELLOW}İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://example.com | ARC)${C_RESET}"
+echo -e "  ${C_YELLOW}İpucu: Haritada tıklanabilir link göstermek için 'https://' ekleyin (Örn: https://example.com)${C_RESET}"
 read -p "Durum Mesajınız [Varsayılan: APRS Background Beacon]: " COMMENT
 COMMENT=$(echo "$COMMENT" | xargs)
 if [ -z "$COMMENT" ]; then
@@ -102,12 +140,6 @@ case "$SYM_CHOICE" in
         ;;
     *) SYMBOL_CODE="X" ;;
 esac
-
-# Android / Termux Tespiti
-IS_ANDROID=false
-if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
-    IS_ANDROID=true
-fi
 
 USE_TERMUX_GPS="false"
 LATITUDE=""
@@ -151,7 +183,7 @@ for url in urls:
     except:
         continue
 ")
-        if [n "$IP_LOC" ]; then
+        if [ -n "$IP_LOC" ]; then
             IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
             echo -e "${C_GREEN}[+] Otomatik Konum Tespit Edildi: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
             LATITUDE="$LAT"
@@ -165,9 +197,9 @@ for url in urls:
         echo -e "${C_BLUE}[i] Koordinatlarınızı kolayca bulabilmeniz için tarayıcıda OpenStreetMap açılıyor...${C_RESET}"
         python3 -m webbrowser "https://www.openstreetmap.org" &>/dev/null &
         
-        echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan Taksim Meydanı gibi konumunuzu bulun):${C_RESET}"
+        echo -e "${C_YELLOW}[!] Lütfen koordinatlarınızı manuel girin (Açılan haritadan enlem/boylam kopyalayın):${C_RESET}"
         while true; do
-            read -p "  Enlem (Latitude, Örn: 41.037002 - Taksim Meydanı): " LATITUDE
+            read -p "  Enlem (Latitude, Örn: 41.037002): " LATITUDE
             LATITUDE=$(echo "$LATITUDE" | xargs)
             if python3 -c "float('$LATITUDE')" &>/dev/null; then
                 break
@@ -175,7 +207,7 @@ for url in urls:
             echo -e "${C_RED}Hata: Geçersiz enlem değeri!${C_RESET}"
         done
         while true; do
-            read -p "  Boylam (Longitude, Örn: 28.985012 - Taksim Meydanı): " LONGITUDE
+            read -p "  Boylam (Longitude, Örn: 28.985012): " LONGITUDE
             LONGITUDE=$(echo "$LONGITUDE" | xargs)
             if python3 -c "float('$LONGITUDE')" &>/dev/null; then
                 break
@@ -200,7 +232,7 @@ while true; do
 done
 
 # Yapılandırmayı Kaydet
-cat <<EOF > "$INSTALL_DIR/config.json"
+cat <<EOF > "$PROFILES_DIR/$PROFILE_NAME.json"
 {
     "callsign": "$CALLSIGN",
     "passcode": $PASSCODE,
@@ -216,33 +248,38 @@ cat <<EOF > "$INSTALL_DIR/config.json"
 }
 EOF
 
-echo -e "\n${C_GREEN}[+] Yapılandırma dosyası kaydedildi: $INSTALL_DIR/config.json${C_RESET}"
+echo -e "\n${C_GREEN}[+] Yapılandırma dosyası kaydedildi: $PROFILES_DIR/$PROFILE_NAME.json${C_RESET}"
 
-# Daemon dosyasını indir veya güncelle
-echo -e "${C_BLUE}[i] En güncel aprs_beacon.py dosyası indiriliyor/güncelleniyor...${C_RESET}"
-if command -v curl &>/dev/null; then
-    curl -sL -o "$INSTALL_DIR/aprs_beacon.py" "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
-elif command -v wget &>/dev/null; then
-    wget -q -o "$INSTALL_DIR/aprs_beacon.py" "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
+# Dosyaları kopyala / indir
+echo -e "${C_BLUE}[i] Uygulama scriptleri kuruluyor...${C_RESET}"
+if [ -f "./aprs_beacon.py" ]; then
+    cp "./aprs_beacon.py" "$INSTALL_DIR/aprs_beacon.py"
 else
-    if [ -f "./aprs_beacon.py" ]; then
-        cp "./aprs_beacon.py" "$INSTALL_DIR/aprs_beacon.py"
-    else
-        echo -e "${C_RED}[!] Hata: İnternet bağlantısı veya curl/wget bulunamadı, yerel dosya da mevcut değil!${C_RESET}"
-        exit 1
-    fi
+    curl -sL -o "$INSTALL_DIR/aprs_beacon.py" "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
 fi
 chmod +x "$INSTALL_DIR/aprs_beacon.py"
 
+if [ -f "./aprs_manager.py" ]; then
+    cp "./aprs_manager.py" "$INSTALL_DIR/aprs_manager.py"
+else
+    curl -sL -o "$INSTALL_DIR/aprs_manager.py" "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_manager.py"
+fi
+chmod +x "$INSTALL_DIR/aprs_manager.py"
+
+# Geriye dönük uyumluluk (Eski tekli config varsa taşıyalım)
+if [ -f "$INSTALL_DIR/config.json" ]; then
+    mv "$INSTALL_DIR/config.json" "$PROFILES_DIR/default.json" 2>/dev/null
+    mv "$INSTALL_DIR/aprs_beacon.log" "$LOGS_DIR/default.log" 2>/dev/null
+fi
+
 # Test Gönderimi
 echo -e "\n${C_BLUE}[i] Ayarların doğruluğunu onaylamak için test paketi gönderiliyor...${C_RESET}"
-python3 "$INSTALL_DIR/aprs_beacon.py" --once
+python3 "$INSTALL_DIR/aprs_beacon.py" --profile "$PROFILE_NAME" --once
 if [ $? -eq 0 ]; then
     echo -e "${C_GREEN}[+] Test Başarılı! Konum paketi APRS-IS ağına iletildi.${C_RESET}"
 else
     echo -e "${C_RED}[!] Test Başarısız! Paket sunucuya ulaştırılamadı.${C_RESET}"
-    echo -e "${C_YELLOW}[i] İnternet bağlantınızı kontrol edin.${C_RESET}"
-    echo -e "${C_YELLOW}[i] Detaylar için: cat $INSTALL_DIR/aprs_beacon.log${C_RESET}"
+    echo -e "${C_YELLOW}[i] Detaylar için: cat $LOGS_DIR/$PROFILE_NAME.log${C_RESET}"
     read -p "Yine de devam etmek istiyor musunuz? [y/N]: " PROCEED
     PROCEED=$(echo "$PROCEED" | tr 'A-Z' 'a-z' | xargs)
     if [ "$PROCEED" != "y" ]; then
@@ -251,9 +288,9 @@ else
     fi
 fi
 
-# Başlangıç Ayarı
+# Servis Kurulumu ve Başlatma
 if [ "$IS_ANDROID" = true ]; then
-    # Android/Termux:Boot İşlemleri
+    # Android/Termux Başlatma
     echo -e "\n7. Başlangıç ayarları (Android):"
     read -p "Sistem açılışında arka planda otomatik başlasın mı? [Y/n]: " AUTO_START
     AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
@@ -261,57 +298,38 @@ if [ "$IS_ANDROID" = true ]; then
     BOOT_DIR="$HOME/.termux/boot"
     mkdir -p "$BOOT_DIR"
     
-    cat <<EOF > "$BOOT_DIR/aprs-beacon"
+    cat <<EOF > "$BOOT_DIR/aprs-beacon-$PROFILE_NAME"
 #!/usr/bin/env bash
 termux-wake-lock
-nohup python3 $INSTALL_DIR/aprs_beacon.py >/dev/null 2>&1 &
+nohup python3 $INSTALL_DIR/aprs_beacon.py --profile $PROFILE_NAME >/dev/null 2>&1 &
 EOF
-    chmod +x "$BOOT_DIR/aprs-beacon"
-    
-    echo -e "${C_GREEN}[+] Termux:Boot scripti oluşturuldu: $BOOT_DIR/aprs-beacon${C_RESET}"
+    chmod +x "$BOOT_DIR/aprs-beacon-$PROFILE_NAME"
     
     if [ "$AUTO_START" != "n" ]; then
         echo -e "${C_BLUE}[i] Servis arka planda başlatılıyor (nohup)...${C_RESET}"
         termux-wake-lock
-        # Önce eski olası süreçleri sonlandır
-        pkill -f aprs_beacon.py 2>/dev/null
-        nohup python3 $INSTALL_DIR/aprs_beacon.py >/dev/null 2>&1 &
-        
-        echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}           APRS ARKA PLAN SERVİSİ BAŞARIYLA AKTİF EDİLDİ!${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
-        echo -e "${C_BOLD}Dahili GPS     :${C_RESET} $([ "$USE_TERMUX_GPS" = "true" ] && echo "Aktif (Otomatik)" || echo "Pasif (Sabit)")"
-        echo -e "${C_BOLD}Simge          :${C_RESET} $SYMBOL_TABLE$SYMBOL_CODE"
-        echo -e "${C_BOLD}Mesaj          :${C_RESET} $COMMENT"
-        echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
-        echo -e "${C_BOLD}Durum          :${C_RESET} Arka planda çalışıyor"
-        echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Telefon açıldığında otomatik başlayacak (Termux:Boot kurulu olmalıdır)"
-        echo -e "----------------------------------------------------------------"
-        echo -e "${C_CYAN}Canlı log takibi:${C_RESET}  tail -f $INSTALL_DIR/aprs_beacon.log"
-        echo -e "${C_CYAN}Servisi durdur:${C_RESET}   pkill -f aprs_beacon.py"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
-    else
-        echo -e "${C_YELLOW}[!] Servis otomatik başlatılmadı.${C_RESET}"
+        pkill -f "aprs_beacon.py --profile $PROFILE_NAME" 2>/dev/null
+        nohup python3 $INSTALL_DIR/aprs_beacon.py --profile $PROFILE_NAME >/dev/null 2>&1 &
     fi
 else
     # Linux systemd işlemleri
     echo -e "\n7. Başlangıç ayarları (Linux):"
-    read -p "Sistem açılışında otomatik başlasın mı? [Y/n]: " AUTO_START
+    read -p "Cihaz açılışında bu profil otomatik başlasın mı? [Y/n]: " AUTO_START
     AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
 
+    # Systemd Şablon Servis Dosyasını Oluştur (aprs_manager.py içindeki gibi)
     SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
     mkdir -p "$SYSTEMD_USER_DIR"
 
-    cat <<EOF > "$SYSTEMD_USER_DIR/aprs-beacon.service"
+    cat <<EOF > "$SYSTEMD_USER_DIR/aprs-beacon@.service"
 [Unit]
-Description=APRS Background Beacon Service
+Description=APRS Background Beacon Service (%i)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$(which python3) $INSTALL_DIR/aprs_beacon.py
+ExecStart=$(which python3) $INSTALL_DIR/aprs_beacon.py --profile %i
 Restart=always
 RestartSec=30
 WorkingDirectory=$INSTALL_DIR
@@ -320,33 +338,51 @@ WorkingDirectory=$INSTALL_DIR
 WantedBy=default.target
 EOF
 
-    echo -e "${C_GREEN}[+] Systemd servis dosyası oluşturuldu: $SYSTEMD_USER_DIR/aprs-beacon.service${C_RESET}"
+    systemctl --user daemon-reload
 
     if [ "$AUTO_START" != "n" ]; then
-        echo -e "${C_BLUE}[i] Servis otomatik başlatılacak şekilde yapılandırılıyor...${C_RESET}"
-        systemctl --user daemon-reload
-        systemctl --user enable aprs-beacon.service
-        systemctl --user restart aprs-beacon.service
+        echo -e "${C_BLUE}[i] Servis etkinleştiriliyor...${C_RESET}"
+        systemctl --user enable aprs-beacon@$PROFILE_NAME.service
+        systemctl --user restart aprs-beacon@$PROFILE_NAME.service
         loginctl enable-linger "$USER" 2>/dev/null
-        
-        echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}           APRS ARKA PLAN SERVİSİ BAŞARIYLA AKTİF EDİLDİ!${C_RESET}"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
-        echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
-        echo -e "${C_BOLD}Konum          :${C_RESET} Enlem=$LATITUDE, Boylam=$LONGITUDE"
-        echo -e "${C_BOLD}Simge          :${C_RESET} $SYMBOL_TABLE$SYMBOL_CODE"
-        echo -e "${C_BOLD}Mesaj          :${C_RESET} $COMMENT"
-        echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
-        echo -e "${C_BOLD}Durum          :${C_RESET} Arka planda çalışıyor (Systemd)"
-        echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Bilgisayar açılışında otomatik başlayacak (Linger: Aktif)"
-        echo -e "----------------------------------------------------------------"
-        echo -e "${C_CYAN}Canlı log takibi (systemd):${C_RESET}  journalctl --user -u aprs-beacon -f"
-        echo -e "${C_CYAN}Canlı log takibi (evrensel):${C_RESET} tail -f $INSTALL_DIR/aprs_beacon.log"
-        echo -e "${C_CYAN}Servisi durdur:${C_RESET}              systemctl --user stop aprs-beacon"
-        echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
-    else
-        echo -e "${C_YELLOW}[!] Servis otomatik başlatılmadı.${C_RESET}"
-        echo -e "Dilediğiniz zaman manuel başlatmak için:"
-        echo -e "  systemctl --user start aprs-beacon.service"
     fi
+
+    # Masaüstü Menü Kısayolu Oluşturma
+    DESKTOP_DIR="$HOME/.local/share/applications"
+    mkdir -p "$DESKTOP_DIR"
+    cat <<EOF > "$DESKTOP_DIR/aprs-manager.desktop"
+[Desktop Entry]
+Type=Application
+Name=APRS Multi-Beacon Manager
+Comment=APRS Multi-Profile Background Beacon Manager
+Exec=$INSTALL_DIR/aprs_manager.py gui
+Icon=radio
+Terminal=false
+Categories=Utility;Network;
+EOF
+    chmod +x "$DESKTOP_DIR/aprs-manager.desktop"
+
+    # Otomatik Başlangıca Yönetici Panelini Ekle
+    AUTOSTART_DIR="$HOME/.config/autostart"
+    mkdir -p "$AUTOSTART_DIR"
+    cp "$DESKTOP_DIR/aprs-manager.desktop" "$AUTOSTART_DIR/"
 fi
+
+# Kurulum Sonu Bilgilendirmesi
+echo -e "\n${C_GREEN}${C_BOLD}================================================================${C_RESET}"
+echo -e "${C_GREEN}${C_BOLD}           APRS PROFİLİ ($PROFILE_NAME) BAŞARIYLA AKTİF EDİLDİ!${C_RESET}"
+echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}"
+echo -e "${C_BOLD}Profil Adı     :${C_RESET} $PROFILE_NAME"
+echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
+echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
+echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Evet"
+if [ "$IS_ANDROID" = false ]; then
+    echo -e "----------------------------------------------------------------"
+    echo -e "${C_CYAN}Masaüstü Arayüzü:${C_RESET} Uygulama Menüsünden 'APRS Multi-Beacon Manager'ı açabilirsiniz."
+    echo -e "${C_CYAN}Sistem Tepsisi  :${C_RESET} Uygulama açıldığında sağ üstte/sağ altta bir ikon belirecektir."
+    echo -e "${C_CYAN}Terminalden Yönetim:${C_RESET}"
+    echo -e "  - Profilleri Listele:  aprs_manager list"
+    echo -e "  - Servisi Başlat:      aprs_manager start $PROFILE_NAME"
+    echo -e "  - Servisi Durdur:      aprs_manager stop $PROFILE_NAME"
+fi
+echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"
