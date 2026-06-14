@@ -518,8 +518,8 @@ def cli_edit():
 class APRSManagerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("📻 APRS Beacon Yönetim Paneli")
-        self.root.geometry("820x620")
+        self.root.title("APRS Beacon Yonetim Paneli")
+        self.root.geometry("900x600")
         self.root.configure(bg="#1e1e2e")
         self.root.resizable(False, False)
         
@@ -571,7 +571,7 @@ class APRSManagerGUI:
         header_frame.pack(fill="x", side="top")
         header_frame.pack_propagate(False)
         
-        header_label = tk.Label(header_frame, text="📻 APRS Multi-Beacon Yönetim Paneli", font=("Outfit", 15, "bold"), fg="#cdd6f4", bg="#11111b")
+        header_label = tk.Label(header_frame, text="APRS Multi-Beacon Yonetim Paneli", font=("DejaVu Sans", 14, "bold"), fg="#cdd6f4", bg="#11111b")
         header_label.pack(side="left", padx=20, pady=20)
         
         # Buttons container in header
@@ -579,28 +579,28 @@ class APRSManagerGUI:
         btn_container.pack(side="right", padx=20, pady=15)
         
         # Add Profile Button
-        add_btn = tk.Button(btn_container, text="➕ Yeni Profil", font=("Outfit", 9, "bold"), bg="#a6e3a1", fg="#11111b", 
+        add_btn = tk.Button(btn_container, text="+ Yeni Profil", font=("DejaVu Sans", 9, "bold"), bg="#a6e3a1", fg="#11111b", 
                             relief="flat", padx=10, pady=5, activebackground="#89b4fa", command=self.open_add_profile_dialog)
         add_btn.pack(side="left", padx=4)
         add_btn.bind("<Enter>", lambda e: add_btn.configure(bg="#89b4fa"))
         add_btn.bind("<Leave>", lambda e: add_btn.configure(bg="#a6e3a1"))
 
         # Import Button
-        import_btn = tk.Button(btn_container, text="📥 İçe Aktar", font=("Outfit", 9, "bold"), bg="#89b4fa", fg="#11111b",
+        import_btn = tk.Button(btn_container, text="Ice Aktar", font=("DejaVu Sans", 9, "bold"), bg="#89b4fa", fg="#11111b",
                               relief="flat", padx=10, pady=5, activebackground="#b4befe", command=self.trigger_import)
         import_btn.pack(side="left", padx=4)
         import_btn.bind("<Enter>", lambda e: import_btn.configure(bg="#b4befe"))
         import_btn.bind("<Leave>", lambda e: import_btn.configure(bg="#89b4fa"))
 
         # Export Button
-        export_btn = tk.Button(btn_container, text="📤 Dışa Aktar", font=("Outfit", 9, "bold"), bg="#cba6f7", fg="#11111b",
+        export_btn = tk.Button(btn_container, text="Disa Aktar", font=("DejaVu Sans", 9, "bold"), bg="#cba6f7", fg="#11111b",
                               relief="flat", padx=10, pady=5, activebackground="#f5c2e7", command=self.trigger_export)
         export_btn.pack(side="left", padx=4)
         export_btn.bind("<Enter>", lambda e: export_btn.configure(bg="#f5c2e7"))
         export_btn.bind("<Leave>", lambda e: export_btn.configure(bg="#cba6f7"))
 
         # Update Button
-        update_btn = tk.Button(btn_container, text="🔄 Güncelle", font=("Outfit", 9, "bold"), bg="#f9e2af", fg="#11111b",
+        update_btn = tk.Button(btn_container, text="Guncelle", font=("DejaVu Sans", 9, "bold"), bg="#f9e2af", fg="#11111b",
                               relief="flat", padx=10, pady=5, activebackground="#f38ba8", command=self.trigger_self_update)
         update_btn.pack(side="left", padx=4)
         update_btn.bind("<Enter>", lambda e: update_btn.configure(bg="#f38ba8"))
@@ -611,8 +611,8 @@ class APRSManagerGUI:
         self.main_container.pack(fill="both", expand=True, padx=20, pady=15)
         
         # Welcome message
-        self.welcome_label = tk.Label(self.main_container, text="Henüz hiçbir profil kurulu değil.\nSağ üstten yeni bir profil ekleyerek başlayın.", 
-                                      font=("Outfit", 12), fg="#7f849c", bg="#1e1e2e")
+        self.welcome_label = tk.Label(self.main_container, text="Henuz hicbir profil kurulu degil.\nSag ustten yeni bir profil ekleyerek baslayin.", 
+                                      font=("DejaVu Sans", 11), fg="#7f849c", bg="#1e1e2e")
         
         # Create profile grid frame
         self.grid_frame = tk.Frame(self.main_container, bg="#1e1e2e")
@@ -631,95 +631,85 @@ class APRSManagerGUI:
             self.welcome_label.pack_forget()
             
         # Draw Profile Cards
-        row, col = 0, 0
-        for name, data in profiles.items():
-            self.create_profile_card(name, data, row, col)
-            col += 1
-            if col > 1: # 2 columns layout
-                col = 0
-                row += 1
+        self.grid_frame.grid_columnconfigure(0, weight=1)
+        for idx, (name, data) in enumerate(profiles.items()):
+            self.create_profile_card(name, data, idx, 0)
 
     def create_profile_card(self, name, data, row, col):
-        card = tk.Frame(self.grid_frame, bg="#252538", bd=0, highlightthickness=1, highlightbackground="#313244")
-        card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
+        card = tk.Frame(self.grid_frame, bg="#252538", bd=0, highlightthickness=1, highlightbackground="#313244", padx=15, pady=12)
+        card.grid(row=row, column=0, padx=10, pady=6, sticky="ew")
         
-        # Configure columns weights so they stretch
-        self.grid_frame.grid_columnconfigure(0, weight=1)
-        self.grid_frame.grid_columnconfigure(1, weight=1)
+        # Left side: Name & Status
+        left_frame = tk.Frame(card, bg="#252538")
+        left_frame.pack(side="left", fill="y")
         
-        # Card header (Profile Name & Status indicator)
-        card_header = tk.Frame(card, bg="#2d2d44")
-        card_header.pack(fill="x", padx=0, pady=0)
-        
-        name_label = tk.Label(card_header, text=name.upper(), font=("Outfit", 12, "bold"), fg="#89b4fa", bg="#2d2d44")
-        name_label.pack(side="left", padx=15, pady=8)
-        
+        # Status indicator
         running = is_profile_running(name)
         status_color = "#a6e3a1" if running else "#f38ba8"
-        status_text = "AKTİF" if running else "KAPALI"
+        status_text = "AKTIF" if running else "KAPALI"
         
         # Status pill
-        status_frame = tk.Frame(card_header, bg=status_color, padx=8, pady=2)
-        status_frame.pack(side="right", padx=15, pady=8)
+        status_frame = tk.Frame(left_frame, bg=status_color, padx=8, pady=2)
+        status_frame.pack(side="left", padx=(0, 15))
         
-        status_lbl = tk.Label(status_frame, text=status_text, font=("Outfit", 8, "bold"), fg="#11111b", bg=status_color)
+        status_lbl = tk.Label(status_frame, text=status_text, font=("DejaVu Sans", 8, "bold"), fg="#11111b", bg=status_color)
         status_lbl.pack()
         
-        # Info labels
-        info_frame = tk.Frame(card, bg="#252538")
-        info_frame.pack(fill="x", padx=15, pady=12)
+        name_lbl = tk.Label(left_frame, text=name.upper(), font=("DejaVu Sans", 11, "bold"), fg="#89b4fa", bg="#252538")
+        name_lbl.pack(side="top", anchor="w")
+        
+        call_lbl = tk.Label(left_frame, text=data.get('callsign', ''), font=("DejaVu Sans", 9), fg="#a6adc8", bg="#252538")
+        call_lbl.pack(side="bottom", anchor="w")
+        
+        # Middle side: Details
+        mid_frame = tk.Frame(card, bg="#252538")
+        mid_frame.pack(side="left", fill="both", expand=True, padx=30)
+        
+        # Details grid
+        lbl_style = {"font": ("DejaVu Sans", 9, "bold"), "fg": "#b4befe", "bg": "#252538"}
+        val_style = {"font": ("DejaVu Sans", 9), "fg": "#cdd6f4", "bg": "#252538"}
         
         comment_val = data.get('comment', 'APRS Background Beacon')
-        if len(comment_val) > 28:
-            comment_val = comment_val[:25] + "..."
+        if len(comment_val) > 40:
+            comment_val = comment_val[:37] + "..."
             
-        details = [
-            ("Çağrı İşareti:", data.get('callsign')),
-            ("Sıklık:", f"{data.get('interval_minutes')} dakika"),
-            ("Koordinat:", f"{data.get('latitude')}, {data.get('longitude')}"),
-            ("APRS Perşembe:", "Aktif (ANSRVR)" if data.get('aprs_thursday', False) else "Pasif"),
-            ("Simge / Mesaj:", f"[{data.get('symbol_code')}] {comment_val}")
-        ]
+        tk.Label(mid_frame, text="Siklik:", **lbl_style).grid(row=0, column=0, sticky="w", pady=1)
+        tk.Label(mid_frame, text=f"{data.get('interval_minutes')} dakika", **val_style).grid(row=0, column=1, sticky="w", padx=10, pady=1)
         
-        for idx, (label_txt, val_txt) in enumerate(details):
-            lbl = tk.Label(info_frame, text=label_txt, font=("Outfit", 9, "bold"), fg="#b4befe", bg="#252538")
-            lbl.grid(row=idx, column=0, sticky="w", pady=3)
-            val = tk.Label(info_frame, text=val_txt, font=("Outfit", 9), fg="#cdd6f4", bg="#252538")
-            val.grid(row=idx, column=1, sticky="w", padx=15, pady=3)
-            
-        # Action Buttons
-        btn_frame = tk.Frame(card, bg="#252538")
-        btn_frame.pack(fill="x", padx=15, pady=(2, 15))
+        tk.Label(mid_frame, text="Konum:", **lbl_style).grid(row=1, column=0, sticky="w", pady=1)
+        tk.Label(mid_frame, text=f"{data.get('latitude')}, {data.get('longitude')} ({data.get('symbol_code')})", **val_style).grid(row=1, column=1, sticky="w", padx=10, pady=1)
+
+        tk.Label(mid_frame, text="Mesaj:", **lbl_style).grid(row=2, column=0, sticky="w", pady=1)
+        tk.Label(mid_frame, text=comment_val, **val_style).grid(row=2, column=1, sticky="w", padx=10, pady=1)
+
+        # Right side: Actions
+        right_frame = tk.Frame(card, bg="#252538")
+        right_frame.pack(side="right", fill="y")
         
-        # Toggle Start/Stop
-        toggle_txt = "🛑 Durdur" if running else "▶️ Başlat"
+        toggle_txt = "Durdur" if running else "Baslat"
         toggle_color = "#f38ba8" if running else "#a6e3a1"
-        toggle_fg = "#11111b"
         
-        toggle_btn = tk.Button(btn_frame, text=toggle_txt, font=("Outfit", 9, "bold"), bg=toggle_color, fg=toggle_fg, 
-                               relief="flat", width=10, command=lambda n=name, r=running: self.toggle_profile(n, r))
-        toggle_btn.pack(side="left", padx=(0, 4))
+        toggle_btn = tk.Button(right_frame, text=toggle_txt, font=("DejaVu Sans", 9, "bold"), bg=toggle_color, fg="#11111b", 
+                               relief="flat", width=8, pady=3, command=lambda n=name, r=running: self.toggle_profile(n, r))
+        toggle_btn.pack(side="left", padx=3)
         
-        # Log Viewer
-        log_btn = tk.Button(btn_frame, text="📄 Loglar", font=("Outfit", 9, "bold"), bg="#45475a", fg="#cdd6f4", 
-                             relief="flat", width=9, command=lambda n=name: self.open_log_viewer(n))
-        log_btn.pack(side="left", padx=4)
+        log_btn = tk.Button(right_frame, text="Loglar", font=("DejaVu Sans", 9, "bold"), bg="#45475a", fg="#cdd6f4", 
+                             relief="flat", width=8, pady=3, command=lambda n=name: self.open_log_viewer(n))
+        log_btn.pack(side="left", padx=3)
         log_btn.bind("<Enter>", lambda e, b=log_btn: b.configure(bg="#585b70"))
         log_btn.bind("<Leave>", lambda e, b=log_btn: b.configure(bg="#45475a"))
         
-        # Delete Profile (Icon button)
-        del_btn = tk.Button(btn_frame, text="🗑️", font=("Outfit", 10, "bold"), bg="#313244", fg="#f38ba8", 
-                            relief="flat", width=3, command=lambda n=name: self.delete_profile(n))
-        del_btn.pack(side="right", padx=(4, 0))
-        del_btn.bind("<Enter>", lambda e, b=del_btn: b.configure(bg="#f38ba8", fg="#11111b"))
-        del_btn.bind("<Leave>", lambda e, b=del_btn: b.configure(bg="#313244", fg="#f38ba8"))
-
-        # Edit Profile (Icon button)
-        edit_btn = tk.Button(btn_frame, text="✏️", font=("Outfit", 10, "bold"), bg="#313244", fg="#f9e2af", 
-                             relief="flat", width=3, command=lambda n=name: self.open_add_profile_dialog(n))
-        edit_btn.pack(side="right", padx=4)
+        edit_btn = tk.Button(right_frame, text="Duzenle", font=("DejaVu Sans", 9, "bold"), bg="#313244", fg="#f9e2af", 
+                             relief="flat", width=8, pady=3, command=lambda n=name: self.open_add_profile_dialog(n))
+        edit_btn.pack(side="left", padx=3)
         edit_btn.bind("<Enter>", lambda e, b=edit_btn: b.configure(bg="#f9e2af", fg="#11111b"))
         edit_btn.bind("<Leave>", lambda e, b=edit_btn: b.configure(bg="#313244", fg="#f9e2af"))
+        
+        del_btn = tk.Button(right_frame, text="Sil", font=("DejaVu Sans", 9, "bold"), bg="#313244", fg="#f38ba8", 
+                            relief="flat", width=6, pady=3, command=lambda n=name: self.delete_profile(n))
+        del_btn.pack(side="left", padx=3)
+        del_btn.bind("<Enter>", lambda e, b=del_btn: b.configure(bg="#f38ba8", fg="#11111b"))
+        del_btn.bind("<Leave>", lambda e, b=del_btn: b.configure(bg="#313244", fg="#f38ba8"))
 
     def toggle_profile(self, name, currently_running):
         if currently_running:
@@ -733,24 +723,24 @@ class APRSManagerGUI:
     def delete_profile(self, name):
         if not gui_require_auth(self.root):
             return
-        if messagebox.askyesno("Profili Sil", f"'{name}' profilini ve tüm verilerini silmek istediğinizden emin misiniz?"):
+        if messagebox.askyesno("Profili Sil", f"'{name}' profilini ve tum verilerini silmek istediginizden emin misiniz?"):
             delete_profile_files(name)
             self.refresh_profiles()
             self.update_tray_menu()
 
     def open_log_viewer(self, name):
         log_win = tk.Toplevel(self.root)
-        log_win.title(f"📄 {name.upper()} - Canlı Günlük Kayıtları")
+        log_win.title(f"{name.upper()} - Canli Gunluk Kayitlari")
         log_win.geometry("750x500")
         log_win.configure(bg="#1e1e2e")
         
-        header_lbl = tk.Label(log_win, text=f"📄 {name.upper()} Profili Canlı Log Takibi", font=("Outfit", 12, "bold"), fg="#89b4fa", bg="#1e1e2e")
+        header_lbl = tk.Label(log_win, text=f"{name.upper()} Profili Canli Log Takibi", font=("DejaVu Sans", 11, "bold"), fg="#89b4fa", bg="#1e1e2e")
         header_lbl.pack(pady=(15, 5))
         
-        info_lbl = tk.Label(log_win, text="En son 100 günlük kaydı canlı olarak aşağıda gösterilmektedir.", font=("Outfit", 9), fg="#a6adc8", bg="#1e1e2e")
+        info_lbl = tk.Label(log_win, text="En son 100 gunluk kaydi canli olarak asagida gosterilmektedir.", font=("DejaVu Sans", 9), fg="#a6adc8", bg="#1e1e2e")
         info_lbl.pack(pady=(0, 10))
         
-        txt_area = tk.Text(log_win, bg="#11111b", fg="#a6e3a1", font=("Courier New", 10), wrap="word", state="disabled",
+        txt_area = tk.Text(log_win, bg="#11111b", fg="#a6e3a1", font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
                            bd=0, highlightthickness=1, highlightbackground="#313244")
         txt_area.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
@@ -766,9 +756,9 @@ class APRSManagerGUI:
                     with open(log_file, 'r', encoding='utf-8') as f:
                         lines = f.readlines()[-100:] # Show last 100 lines
                 except Exception as e:
-                    lines = [f"Log dosyası okunamadı: {e}"]
+                    lines = [f"Log dosyasi okunamadi: {e}"]
             else:
-                lines = ["Log kaydı bulunamadı. Servis başladığında kayıtlar burada görünecektir."]
+                lines = ["Log kaydi bulunamadi. Servis basladiginda kayitlar burada gorunecektir."]
                 
             txt_area.configure(state="normal")
             txt_area.delete("1.0", tk.END)
@@ -784,7 +774,7 @@ class APRSManagerGUI:
     def open_add_profile_dialog(self, edit_profile_name=None):
         # 2 profile limit check
         if not edit_profile_name and not IS_BYPASS and len(get_profiles()) >= 2:
-            messagebox.showerror("Hata", "En fazla 2 profil ekleyebilirsiniz. Daha fazlası için yetkili olmanız gerekir.")
+            messagebox.showerror("Hata", "En fazla 2 profil ekleyebilirsiniz. Daha fazlasi icin yetkili olmaniz gerekir.")
             return
 
         # Auth check
@@ -793,7 +783,7 @@ class APRSManagerGUI:
 
         # Custom Form Window
         form = tk.Toplevel(self.root)
-        form.title("Yeni Profil Ekle" if not edit_profile_name else f"Profil Düzenle: {edit_profile_name}")
+        form.title("Yeni Profil Ekle" if not edit_profile_name else f"Profil Duzenle: {edit_profile_name}")
         form.geometry("520x490")
         form.configure(bg="#1e1e2e")
         form.resizable(False, False)
@@ -802,21 +792,21 @@ class APRSManagerGUI:
         form.transient(self.root)
         form.grab_set()
         
-        title_lbl_text = "✨ Yeni APRS Profil Ayarları" if not edit_profile_name else "✏️ APRS Profil Ayarlarını Düzenle"
-        title = tk.Label(form, text=title_lbl_text, font=("Outfit", 14, "bold"), fg="#89b4fa", bg="#1e1e2e")
+        title_lbl_text = "Yeni APRS Profil Ayarlari" if not edit_profile_name else "APRS Profil Ayarlarini Duzenle"
+        title = tk.Label(form, text=title_lbl_text, font=("DejaVu Sans", 13, "bold"), fg="#89b4fa", bg="#1e1e2e")
         title.pack(pady=(20, 15))
         
         fields_frame = tk.Frame(form, bg="#1e1e2e")
         fields_frame.pack(fill="both", expand=True, padx=25)
         
         fields_config = [
-            ("Profil Adı (Tek kelime)", "name", 0, 0),
-            ("Çağrı İşareti (SSID'li)", "callsign", 0, 1),
-            ("APRS-IS Şifresi (Passcode)", "passcode", 1, 0),
-            ("Gönderim Sıklığı (Dakika)", "interval", 1, 1),
+            ("Profil Adi (Tek kelime)", "name", 0, 0),
+            ("Cagri Isareti (SSID'li)", "callsign", 0, 1),
+            ("APRS-IS Sifresi (Passcode)", "passcode", 1, 0),
+            ("Gonderim Sikligi (Dakika)", "interval", 1, 1),
             ("Enlem (Latitude)", "latitude", 2, 0),
             ("Boylam (Longitude)", "longitude", 2, 1),
-            ("Simge Karakteri (Örn: X, >)", "symbol", 3, 0),
+            ("Simge Karakteri (Orn: X, >)", "symbol", 3, 0),
         ]
         
         entries = {}
@@ -824,11 +814,11 @@ class APRSManagerGUI:
             cell_frame = tk.Frame(fields_frame, bg="#1e1e2e")
             cell_frame.grid(row=row, column=col, sticky="ew", padx=10, pady=8)
             
-            lbl = tk.Label(cell_frame, text=label_txt, font=("Outfit", 9, "bold"), fg="#a6adc8", bg="#1e1e2e")
+            lbl = tk.Label(cell_frame, text=label_txt, font=("DejaVu Sans", 9, "bold"), fg="#a6adc8", bg="#1e1e2e")
             lbl.pack(anchor="w", pady=(0, 3))
             
             ent = tk.Entry(cell_frame, bg="#313244", fg="#cdd6f4", insertbackground="#cdd6f4", 
-                           bd=0, highlightthickness=1, highlightbackground="#45475a", font=("Outfit", 10),
+                           bd=0, highlightthickness=1, highlightbackground="#45475a", font=("DejaVu Sans", 10),
                            relief="flat")
             ent.pack(fill="x", ipady=3)
             entries[name] = ent
@@ -840,11 +830,11 @@ class APRSManagerGUI:
         comment_frame = tk.Frame(fields_frame, bg="#1e1e2e")
         comment_frame.grid(row=3, column=1, sticky="ew", padx=10, pady=8)
         
-        comment_lbl = tk.Label(comment_frame, text="Durum Mesajı (Comment)", font=("Outfit", 9, "bold"), fg="#a6adc8", bg="#1e1e2e")
+        comment_lbl = tk.Label(comment_frame, text="Durum Mesaji (Comment)", font=("DejaVu Sans", 9, "bold"), fg="#a6adc8", bg="#1e1e2e")
         comment_lbl.pack(anchor="w", pady=(0, 3))
         
         comment_ent = tk.Entry(comment_frame, bg="#313244", fg="#cdd6f4", insertbackground="#cdd6f4", 
-                               bd=0, highlightthickness=1, highlightbackground="#45475a", font=("Outfit", 10),
+                               bd=0, highlightthickness=1, highlightbackground="#45475a", font=("DejaVu Sans", 10),
                                relief="flat")
         comment_ent.pack(fill="x", ipady=3)
         entries['comment'] = comment_ent
@@ -854,17 +844,17 @@ class APRSManagerGUI:
         thurs_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=15)
         
         thursday_var = tk.BooleanVar(value=False)
-        thursday_cb = tk.Checkbutton(thurs_frame, text="📅 Her Perşembe APRS Etkinliğine Katıl (ANSRVR)", variable=thursday_var, 
-                                     font=("Outfit", 9, "bold"), fg="#cdd6f4", bg="#252538", activebackground="#252538", 
+        thursday_cb = tk.Checkbutton(thurs_frame, text="Her Persembe APRS Etkinligine Katil (ANSRVR)", variable=thursday_var, 
+                                     font=("DejaVu Sans", 9, "bold"), fg="#cdd6f4", bg="#252538", activebackground="#252538", 
                                      activeforeground="#cdd6f4", selectcolor="#313244")
         thursday_cb.pack(side="left")
         
         time_ent = tk.Entry(thurs_frame, bg="#313244", fg="#cdd6f4", insertbackground="#cdd6f4", 
-                            bd=0, highlightthickness=1, highlightbackground="#45475a", width=6, font=("Outfit", 10))
+                            bd=0, highlightthickness=1, highlightbackground="#45475a", width=6, font=("DejaVu Sans", 10))
         time_ent.pack(side="right", padx=(5, 0))
         time_ent.insert(0, "20:00")
         
-        time_lbl = tk.Label(thurs_frame, text="Saat (SS:DD):", font=("Outfit", 9, "bold"), fg="#a6adc8", bg="#252538")
+        time_lbl = tk.Label(thurs_frame, text="Saat (SS:DD):", font=("DejaVu Sans", 9, "bold"), fg="#a6adc8", bg="#252538")
         time_lbl.pack(side="right")
         
         # Set default values or load edit values
@@ -900,20 +890,20 @@ class APRSManagerGUI:
             aprs_thursday_time = time_ent.get().strip() or "20:00"
             
             if not name or not callsign or not lat_in or not lon_in:
-                messagebox.showerror("Hata", "Lütfen zorunlu alanları (Profil Adı, Çağrı İşareti, Koordinatlar) doldurun.", parent=form)
+                messagebox.showerror("Hata", "Lutfen zorunlu alanlari (Profil Adi, Cagri Isareti, Koordinatlar) doldurun.", parent=form)
                 return
                 
             if not edit_profile_name:
                 profiles = get_profiles()
                 if name in profiles:
-                    messagebox.showerror("Hata", f"'{name}' adında bir profil zaten mevcut.", parent=form)
+                    messagebox.showerror("Hata", f"'{name}' adinda bir profil zaten mevcut.", parent=form)
                     return
                 
             try:
                 lat = float(lat_in)
                 lon = float(lon_in)
             except ValueError:
-                messagebox.showerror("Hata", "Koordinatlar sayısal değerler olmalıdır.", parent=form)
+                messagebox.showerror("Hata", "Koordinatlar sayisal degerler olmalidir.", parent=form)
                 return
                 
             if not passcode_in:
@@ -922,7 +912,7 @@ class APRSManagerGUI:
                 try:
                     passcode = int(passcode_in)
                 except ValueError:
-                    messagebox.showerror("Hata", "Geçersiz şifre formatı.", parent=form)
+                    messagebox.showerror("Hata", "Gecersiz sifre formati.", parent=form)
                     return
                     
             try:
@@ -958,14 +948,14 @@ class APRSManagerGUI:
                     start_profile_service(name)
                     self.refresh_profiles()
                     self.update_tray_menu()
-                messagebox.showinfo("Başarılı", f"'{name}' profili başarıyla güncellendi.")
+                messagebox.showinfo("Basarili", f"'{name}' profili basariyla guncellendi.")
             else:
-                if messagebox.askyesno("Başlat", f"'{name}' profili başarıyla oluşturuldu. Hemen başlatılsın mı?"):
+                if messagebox.askyesno("Baslat", f"'{name}' profili basariyla olusturuldu. Hemen baslatilsin mi?"):
                     start_profile_service(name)
                     self.refresh_profiles()
                     self.update_tray_menu()
 
-        save_btn = tk.Button(form, text="💾 Ayarları Kaydet", font=("Outfit", 10, "bold"), bg="#a6e3a1", fg="#11111b", 
+        save_btn = tk.Button(form, text="Ayarlari Kaydet", font=("DejaVu Sans", 10, "bold"), bg="#a6e3a1", fg="#11111b", 
                              relief="flat", pady=8, command=save_new)
         save_btn.pack(pady=(0, 20), side="bottom", fill="x", padx=35)
 
@@ -980,7 +970,7 @@ class APRSManagerGUI:
             
         profiles = get_profiles()
         menu_items = [
-            pystray.MenuItem("Kontrol Panelini Göster", self.restore_from_tray, default=True),
+            pystray.MenuItem("Kontrol Panelini Goster", self.restore_from_tray, default=True),
             pystray.Menu.SEPARATOR
         ]
         
@@ -991,16 +981,16 @@ class APRSManagerGUI:
                 
             for name in profiles.keys():
                 running = is_profile_running(name)
-                icon_prefix = "🟢 " if running else "🔴 "
-                toggle_txt = f"{icon_prefix}{name.upper()} ({'Durdur' if running else 'Başlat'})"
+                icon_prefix = "ON - " if running else "OFF - "
+                toggle_txt = f"{icon_prefix}{name.upper()} ({'Durdur' if running else 'Baslat'})"
                 menu_items.append(pystray.MenuItem(toggle_txt, toggle_wrapper(name, running)))
                 
             menu_items.append(pystray.Menu.SEPARATOR)
             
-        menu_items.append(pystray.MenuItem("Tümünü Başlat", self.start_all_profiles))
-        menu_items.append(pystray.MenuItem("Tümünü Durdur", self.stop_all_profiles))
+        menu_items.append(pystray.MenuItem("Tumunu Baslat", self.start_all_profiles))
+        menu_items.append(pystray.MenuItem("Tumunu Durdur", self.stop_all_profiles))
         menu_items.append(pystray.Menu.SEPARATOR)
-        menu_items.append(pystray.MenuItem("Çıkış", self.quit_application))
+        menu_items.append(pystray.MenuItem("Cikis", self.quit_application))
         
         menu = pystray.Menu(*menu_items)
         
