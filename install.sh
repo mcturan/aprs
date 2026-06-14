@@ -56,14 +56,14 @@ if [ "$IS_ANDROID" = false ]; then
     fi
 
     if [ "$HAS_GUI" = true ]; then
-        echo -e "${C_BLUE}[i] Arayüz ve Sistem Tepsisi (pystray, tkinter) kütüphaneleri kontrol ediliyor...${C_RESET}"
-        if ! python3 -c "import tkinter; import pystray" &>/dev/null; then
+        echo -e "${C_BLUE}[i] Arayüz, Sistem Tepsisi ve Görsel Kütüphaneler (pystray, tkinter, pillow) kontrol ediliyor...${C_RESET}"
+        if ! python3 -c "import tkinter; import pystray; import PIL" &>/dev/null; then
             echo -e "${C_YELLOW}[!] Gerekli arayüz kütüphaneleri eksik. Kuruluyor...${C_RESET}"
             if command -v apt-get &> /dev/null; then
                 echo -e "${C_BLUE}[i] Yükleme için sudo yetkisi istenebilir:${C_RESET}"
-                sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray
+                sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray python3-pil
             else
-                echo -e "${C_RED}[!] Hata: Paket yöneticisi (apt-get) bulunamadı. Lütfen python3-tk ve python3-pystray paketlerini kurun.${C_RESET}"
+                echo -e "${C_RED}[!] Hata: Paket yöneticisi (apt-get) bulunamadı. Lütfen python3-tk, python3-pystray ve python3-pil paketlerini kurun.${C_RESET}"
             fi
         else
             echo -e "${C_GREEN}[+] Gerekli arayüz paketleri hazır.${C_RESET}"
