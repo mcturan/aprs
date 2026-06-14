@@ -10,14 +10,14 @@ import threading
 from datetime import datetime
 
 # Path configuration
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.expanduser('~/.aprs-beacon')
 PROFILES_DIR = os.path.join(BASE_DIR, 'profiles')
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 
 os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Geriye dönük uyumluluk için eski yapılandırmayı taşıyalım (Migration)
+# Migration for older configuration
 old_config = os.path.join(BASE_DIR, 'config.json')
 old_log = os.path.join(BASE_DIR, 'aprs_beacon.log')
 if os.path.exists(old_config):
@@ -29,7 +29,7 @@ if os.path.exists(old_config):
     except Exception as e:
         print(f"Migration error: {e}", file=sys.stderr)
 
-# Profil adını belirlemek için sys.argv'yi tarayalım
+# Parse profile name
 PROFILE_NAME = 'default'
 for idx, arg in enumerate(sys.argv):
     if arg == '--profile' and idx + 1 < len(sys.argv):
@@ -72,49 +72,49 @@ def generate_aprs_passcode(callsign):
     return hash_val & 0x7fff
 
 def get_termux_gps():
-    # 1. Adım: Son bilinen konumu sorgula (Sistem önbelleği - anında yanıt verir)
+    # Step 1: Query last known location (instant)
     try:
-        log_message("Termux:API üzerinden son bilinen GPS verisi sorgulanıyor...")
+        log_message("Querying last known GPS coordinates via Termux:API...")
         result = subprocess.run(['termux-location', '-r', 'last'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout)
             lat = data.get('latitude')
             lon = data.get('longitude')
             if lat is not None and lon is not None and lat != 0.0 and lon != 0.0:
-                log_message(f"Başarılı (Son Bilinen Konum): {lat}, {lon}")
+                log_message(f"Success (Last Known Location): {lat}, {lon}")
                 return float(lat), float(lon)
     except Exception as e:
-        log_message(f"Son bilinen konum okuma hatası: {e}")
+        log_message(f"Error reading last known location: {e}")
 
-    # 2. Adım: Şebeke/Wi-Fi konumunu sorgula (Hızlıdır, kapalı alanda Google Haritalar gibi çalışır)
+    # Step 2: Query network/Wi-Fi location
     try:
-        log_message("Termux:API üzerinden şebeke/Wi-Fi (network) konumu sorgulanıyor...")
+        log_message("Querying network/Wi-Fi location via Termux:API...")
         result = subprocess.run(['termux-location', '-p', 'network'], capture_output=True, text=True, timeout=8)
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout)
             lat = data.get('latitude')
             lon = data.get('longitude')
             if lat is not None and lon is not None and lat != 0.0 and lon != 0.0:
-                log_message(f"Başarılı (Network Konumu): {lat}, {lon}")
+                log_message(f"Success (Network Location): {lat}, {lon}")
                 return float(lat), float(lon)
     except Exception as e:
-        log_message(f"Şebeke konumu okuma hatası: {e}")
+        log_message(f"Error reading network location: {e}")
 
-    # 3. Adım: GPS Uydularından güncel konum sorgula (Açık alanda çalışır, süre alabilir)
+    # Step 3: Query GPS satellites
     try:
-        log_message("Termux:API üzerinden güncel GPS uydularından konum sorgulanıyor...")
+        log_message("Querying current satellite GPS coordinates via Termux:API...")
         result = subprocess.run(['termux-location', '-p', 'gps'], capture_output=True, text=True, timeout=12)
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout)
             lat = data.get('latitude')
             lon = data.get('longitude')
             if lat is not None and lon is not None:
-                log_message(f"Başarılı (GPS Konumu): {lat}, {lon}")
+                log_message(f"Success (GPS Location): {lat}, {lon}")
                 return float(lat), float(lon)
     except Exception as e:
-        log_message(f"GPS konumu okuma hatası: {e}")
+        log_message(f"Error reading satellite GPS location: {e}")
         
-    log_message("HATA: Termux:API üzerinden hiçbir konum verisi alınamadı.")
+    log_message("ERROR: Failed to retrieve location from Termux:API.")
     return None
 
 def send_aprs_raw_packet(config, packet):
@@ -139,51 +139,48 @@ def send_aprs_raw_packet(config, packet):
         response = s.recv(1024).decode('utf-8', errors='ignore').strip()
         
         if "verified" not in response.lower() and "unverified" in response.lower():
-            log_message("UYARI: Yetkilendirme doğrulanamadı! Lütfen çağrı işaretinizi kontrol edin.")
+            log_message("WARNING: Authentication unverified! Please double-check your passcode and callsign.")
             
-        log_message(f"APRS Paket Gönderiliyor: {packet}")
+        log_message(f"Sending APRS Packet: {packet}")
         s.sendall(f"{packet}\r\n".encode('utf-8'))
         
         time.sleep(2)
         s.close()
         return True
     except Exception as e:
-        log_message(f"HATA: Paket gönderilemedi: {e}")
+        log_message(f"ERROR: Failed to send packet: {e}")
         return False
 
 def send_aprs_thursday_sequence(config, today_str):
     callsign = config['callsign'].upper()
-    log_message("[APRS Thursday] Başlatılıyor. ANSRVR grubuna katılım sağlanıyor...")
+    log_message("[APRS Thursday] Starting. Subscribing to ANSRVR group...")
     
     # Message packet format: SENDER>APRS,TCPIP*::RECIPIENT:MESSAGE
-    # Recipient field must be exactly 9 characters, padded with spaces ("ANSRVR   ")
     msg_packet1 = f"{callsign}>APRS,TCPIP*::ANSRVR   :CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY"
     
     success = send_aprs_raw_packet(config, msg_packet1)
     if success:
-        log_message("[APRS Thursday] Katılım mesajı gönderildi: CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY")
-        log_message("[APRS Thursday] 5 dakika (300 saniye) bekleniyor...")
+        log_message("[APRS Thursday] Join message sent: CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY")
+        log_message("[APRS Thursday] Waiting 5 minutes (300 seconds)...")
         time.sleep(300)
         
         msg_packet2 = f"{callsign}>APRS,TCPIP*::ANSRVR   :U HOTG"
         success2 = send_aprs_raw_packet(config, msg_packet2)
         if success2:
-            log_message("[APRS Thursday] Ayrılma mesajı gönderildi: U HOTG")
-            # Save state in config file
+            log_message("[APRS Thursday] Leave message sent: U HOTG")
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     current_config = json.load(f)
                 current_config['last_aprs_thursday_sent'] = today_str
                 with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                     json.dump(current_config, f, indent=4)
-                log_message(f"[APRS Thursday] Durum başarıyla kaydedildi: {today_str}")
+                log_message(f"[APRS Thursday] State saved successfully: {today_str}")
             except Exception as e:
-                log_message(f"[APRS Thursday] HATA: Durum kaydedilemedi: {e}")
+                log_message(f"[APRS Thursday] ERROR: Failed to save state: {e}")
         else:
-            log_message("[APRS Thursday] HATA: Ayrılma mesajı gönderilemedi.")
+            log_message("[APRS Thursday] ERROR: Failed to send leave message.")
     else:
-        # Reset flag to retry in next loop iteration if it failed
-        log_message("[APRS Thursday] HATA: Katılım mesajı gönderilemedi, bir sonraki döngüde tekrar denenecek.")
+        log_message("[APRS Thursday] ERROR: Failed to send join message. Retrying in next cycle.")
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 current_config = json.load(f)
@@ -199,19 +196,18 @@ def send_beacon(config):
     lat = None
     lon = None
     
-    # Check if Termux GPS is requested
     if config.get('use_termux_gps', False):
         gps_coords = get_termux_gps()
         if gps_coords:
             lat, lon = gps_coords
         else:
-            log_message("UYARI: Termux GPS alınamadı. Sabit konuma dönülüyor.")
+            log_message("WARNING: Failed to read GPS. Falling back to fixed coordinates.")
             
     if lat is None or lon is None:
         lat = float(config.get('latitude', 0.0))
         lon = float(config.get('longitude', 0.0))
         
-    log_message(f"Paketlenecek Konum Bilgisi: Enlem={lat}, Boylam={lon}")
+    log_message(f"Beacon Location Info: Latitude={lat}, Longitude={lon}")
     
     symbol_table = config.get('symbol_table', '/')
     symbol_code = config.get('symbol_code', '-')
@@ -222,10 +218,10 @@ def send_beacon(config):
     
     packet = f"{callsign}>APRS,TCPIP*:!{lat_str}{symbol_table}{lon_str}{symbol_code}{comment}"
     
-    log_message("Konum paketi gönderiliyor...")
+    log_message("Sending location beacon...")
     success = send_aprs_raw_packet(config, packet)
     if success:
-        log_message("Paket başarıyla gönderildi ve bağlantı sonlandırıldı.")
+        log_message("Packet successfully sent. Connection closed.")
         return True
     return False
 
@@ -236,14 +232,14 @@ def main():
     args = parser.parse_args()
     
     if not os.path.exists(CONFIG_FILE):
-        print(f"Hata: Yapılandırma dosyası ({CONFIG_FILE}) bulunamadı.", file=sys.stderr)
+        print(f"Error: Configuration file ({CONFIG_FILE}) not found.", file=sys.stderr)
         sys.exit(1)
         
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
     except Exception as e:
-        print(f"Hata: Yapılandırma dosyası okunamadı: {e}", file=sys.stderr)
+        print(f"Error: Failed to read configuration file: {e}", file=sys.stderr)
         sys.exit(1)
         
     if args.once:
@@ -251,7 +247,7 @@ def main():
         sys.exit(0 if success else 1)
         
     interval = int(config.get('interval_minutes', 5)) * 60
-    log_message("APRS Beacon Servisi başlatıldı.")
+    log_message("APRS Beacon Daemon started.")
     
     while True:
         try:
@@ -260,13 +256,11 @@ def main():
         except Exception:
             pass
             
-        # APRS Thursday kontrolü
         if config.get('aprs_thursday', False):
             now = datetime.now()
-            if now.weekday() == 3: # 3 is Thursday (Mon=0, Tue=1, Wed=2, Thu=3)
+            if now.weekday() == 3: # Thursday
                 today_str = now.strftime('%Y-%m-%d')
                 if config.get('last_aprs_thursday_sent', '') != today_str:
-                    # Belirlenen saati kontrol edelim
                     sched_time = config.get('aprs_thursday_time', '20:00')
                     try:
                         sched_hour, sched_min = map(int, sched_time.split(':'))
@@ -275,7 +269,6 @@ def main():
                         
                     if now.hour > sched_hour or (now.hour == sched_hour and now.minute >= sched_min):
                         try:
-                            # Lock early to prevent spawning multiple threads
                             config['last_aprs_thursday_sent'] = today_str
                             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                                 json.dump(config, f, indent=4)
@@ -285,7 +278,7 @@ def main():
                             log_message(f"Thursday check error: {e}")
             
         send_beacon(config)
-        log_message(f"{config.get('interval_minutes')} dakika boyunca bekleniyor...")
+        log_message(f"Waiting for {config.get('interval_minutes')} minute(s)...")
         time.sleep(interval)
 
 if __name__ == '__main__':
