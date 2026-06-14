@@ -266,15 +266,23 @@ def main():
             if now.weekday() == 3: # 3 is Thursday (Mon=0, Tue=1, Wed=2, Thu=3)
                 today_str = now.strftime('%Y-%m-%d')
                 if config.get('last_aprs_thursday_sent', '') != today_str:
+                    # Belirlenen saati kontrol edelim
+                    sched_time = config.get('aprs_thursday_time', '20:00')
                     try:
-                        # Lock early to prevent spawning multiple threads
-                        config['last_aprs_thursday_sent'] = today_str
-                        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                            json.dump(config, f, indent=4)
+                        sched_hour, sched_min = map(int, sched_time.split(':'))
+                    except Exception:
+                        sched_hour, sched_min = 20, 0
                         
-                        threading.Thread(target=send_aprs_thursday_sequence, args=(config, today_str), daemon=True).start()
-                    except Exception as e:
-                        log_message(f"Thursday check error: {e}")
+                    if now.hour > sched_hour or (now.hour == sched_hour and now.minute >= sched_min):
+                        try:
+                            # Lock early to prevent spawning multiple threads
+                            config['last_aprs_thursday_sent'] = today_str
+                            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                                json.dump(config, f, indent=4)
+                            
+                            threading.Thread(target=send_aprs_thursday_sequence, args=(config, today_str), daemon=True).start()
+                        except Exception as e:
+                            log_message(f"Thursday check error: {e}")
             
         send_beacon(config)
         log_message(f"{config.get('interval_minutes')} dakika boyunca bekleniyor...")

@@ -7,6 +7,8 @@ import argparse
 import subprocess
 import threading
 import time
+import getpass
+import hashlib
 from datetime import datetime
 
 # Base Directory Configurations
@@ -16,6 +18,54 @@ LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 
 os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+# --- Security & Auth Configurations ---
+CURRENT_USER = getpass.getuser()
+IS_BYPASS = (CURRENT_USER == 'turan')
+
+def get_admin_pin_hash():
+    pin_file = os.path.join(BASE_DIR, '.admin_pin')
+    if not os.path.exists(pin_file):
+        # varsayılan PIN: "7373"
+        default_hash = hashlib.sha256("7373".encode()).hexdigest()
+        try:
+            with open(pin_file, 'w') as f:
+                f.write(default_hash)
+        except:
+            pass
+        return default_hash
+    try:
+        with open(pin_file, 'r') as f:
+            return f.read().strip()
+    except:
+        return ""
+
+def verify_pin(input_pin):
+    stored_hash = get_admin_pin_hash()
+    input_hash = hashlib.sha256(input_pin.encode()).hexdigest()
+    return stored_hash == input_hash
+
+def cli_require_auth():
+    if IS_BYPASS:
+        return True
+    print("\033[93m[!] Bu işlem için Yönetici PIN kodu gereklidir.\033[0m")
+    for _ in range(3):
+        pin = getpass.getpass("Yönetici PIN: ").strip()
+        if verify_pin(pin):
+            return True
+        print("\033[91mHata: Geçersiz PIN kodu!\033[0m")
+    return False
+
+def gui_require_auth(parent=None):
+    if IS_BYPASS:
+        return True
+    pin = simpledialog.askstring("Yetkilendirme", "Lütfen Yönetici PIN kodunu girin:", show="*", parent=parent)
+    if pin is None:
+        return False
+    if verify_pin(pin):
+        return True
+    messagebox.showerror("Hata", "Geçersiz PIN kodu!", parent=parent)
+    return False
 
 # Detect OS/Environment
 IS_ANDROID = os.path.exists('/data/data/com.termux') or 'TERMUX_VERSION' in os.environ
@@ -209,6 +259,12 @@ def import_settings(import_file_path):
         if not profiles:
             return False, "Hata: Seçilen dosyada profil kaydı bulunamadı."
             
+        if not IS_BYPASS:
+            current_profiles = get_profiles()
+            union_profiles = set(current_profiles.keys()) | set(profiles.keys())
+            if len(union_profiles) > 2:
+                return False, f"Hata: İçe aktarma sonrasında profil sayısı ({len(union_profiles)}) sınırını aşacaktır (En fazla 2 profile izin verilir)."
+            
         for name, data in profiles.items():
             save_profile(name, data)
             
@@ -267,6 +323,13 @@ def cli_list():
     print()
 
 def cli_create():
+    if not IS_BYPASS and len(get_profiles()) >= 2:
+        print("\033[91mHata: En fazla 2 profil ekleyebilirsiniz. Daha fazlası için yetkili olmanız gerekir.\033[0m")
+        return
+        
+    if not cli_require_auth():
+        return
+
     print("\n=== Yeni APRS Profili Oluştur ===")
     name = input("Profil Adı (Tek kelime, örn: mobil): ").strip().lower()
     if not name:
@@ -316,6 +379,9 @@ def cli_create():
 
     thursday_input = input("APRS Perşembe etkinliğine katılsın mı? (ANSRVR) [y/N]: ").strip().lower()
     aprs_thursday = thursday_input == 'y'
+    aprs_thursday_time = "20:00"
+    if aprs_thursday:
+        aprs_thursday_time = input("APRS Perşembe saati (Örn: 20:00) [Varsayılan: 20:00]: ").strip() or "20:00"
 
     data = {
         "callsign": callsign,
@@ -328,6 +394,7 @@ def cli_create():
         "comment": comment,
         "interval_minutes": interval,
         "aprs_thursday": aprs_thursday,
+        "aprs_thursday_time": aprs_thursday_time,
         "server": "rotate.aprs2.net",
         "port": 14580
     }
@@ -341,6 +408,9 @@ def cli_create():
         print(f"[+] '{name}' profili arka planda başlatıldı.")
 
 def cli_delete(name):
+    if not cli_require_auth():
+        return
+        
     profiles = get_profiles()
     if name not in profiles:
         print(f"Hata: '{name}' adında bir profil bulunamadı.")
@@ -365,6 +435,9 @@ def cli_stop(name):
     print(f"[+] '{name}' profili durduruldu.")
 
 def cli_edit():
+    if not cli_require_auth():
+        return
+
     print("\n=== Profil Bilgilerini Güncelle ===")
     profiles = get_profiles()
     if not profiles:
@@ -409,6 +482,12 @@ def cli_edit():
     if thursday_in:
         aprs_thursday = thursday_in == 'y'
         
+    aprs_thursday_time = data.get('aprs_thursday_time', '20:00')
+    if aprs_thursday:
+        thursday_time_in = input(f"APRS Perşembe saati ({aprs_thursday_time}): ").strip()
+        if thursday_time_in:
+            aprs_thursday_time = thursday_time_in
+        
     updated_data = {
         "callsign": callsign,
         "passcode": passcode,
@@ -420,6 +499,7 @@ def cli_edit():
         "comment": comment,
         "interval_minutes": interval,
         "aprs_thursday": aprs_thursday,
+        "aprs_thursday_time": aprs_thursday_time,
         "server": "rotate.aprs2.net",
         "port": 14580
     }
@@ -642,6 +722,8 @@ class APRSManagerGUI:
         self.update_tray_menu()
 
     def delete_profile(self, name):
+        if not gui_require_auth(self.root):
+            return
         if messagebox.askyesno("Profili Sil", f"'{name}' profilini ve tüm verilerini silmek istediğinizden emin misiniz?"):
             delete_profile_files(name)
             self.refresh_profiles()
@@ -684,6 +766,15 @@ class APRSManagerGUI:
         update_logs()
 
     def open_add_profile_dialog(self, edit_profile_name=None):
+        # 2 profile limit check
+        if not edit_profile_name and not IS_BYPASS and len(get_profiles()) >= 2:
+            messagebox.showerror("Hata", "En fazla 2 profil ekleyebilirsiniz. Daha fazlası için yetkili olmanız gerekir.")
+            return
+
+        # Auth check
+        if not gui_require_auth(self.root):
+            return
+
         # Custom Form Window
         form = tk.Toplevel(self.root)
         form.title("Yeni Profil Ekle" if not edit_profile_name else f"Profil Düzenle: {edit_profile_name}")
@@ -725,12 +816,22 @@ class APRSManagerGUI:
             
         fields_frame.grid_columnconfigure(0, weight=1)
         
-        # Checkbox for APRS Thursday
+        # Checkbox & Time for APRS Thursday
+        thurs_frame = tk.Frame(fields_frame, bg="#1e1e2e")
+        thurs_frame.grid(row=len(labels)*2, column=0, sticky="ew", pady=(10, 5))
+        
         thursday_var = tk.BooleanVar(value=False)
-        thursday_cb = tk.Checkbutton(fields_frame, text="APRS Perşembe Etkinliği (ANSRVR)", variable=thursday_var, 
+        thursday_cb = tk.Checkbutton(thurs_frame, text="APRS Perşembe (ANSRVR)", variable=thursday_var, 
                                      font=("Outfit", 9, "bold"), fg="#cdd6f4", bg="#1e1e2e", activebackground="#1e1e2e", 
                                      activeforeground="#cdd6f4", selectcolor="#313244")
-        thursday_cb.grid(row=len(labels)*2, column=0, sticky="w", pady=(10, 5))
+        thursday_cb.pack(side="left")
+        
+        time_lbl = tk.Label(thurs_frame, text="Saat (SS:DD):", font=("Outfit", 9, "bold"), fg="#a6adc8", bg="#1e1e2e")
+        time_lbl.pack(side="left", padx=(15, 5))
+        
+        time_ent = tk.Entry(thurs_frame, bg="#313244", fg="#cdd6f4", insertbackground="#cdd6f4", bd=0, highlightthickness=1, highlightbackground="#45475a", width=6)
+        time_ent.pack(side="left")
+        time_ent.insert(0, "20:00")
         
         # Set default values or load edit values
         if edit_profile_name:
@@ -746,6 +847,8 @@ class APRSManagerGUI:
             entries['symbol'].insert(0, data.get('symbol_code', 'X'))
             entries['interval'].insert(0, str(data.get('interval_minutes', '5')))
             thursday_var.set(data.get('aprs_thursday', False))
+            time_ent.delete(0, tk.END)
+            time_ent.insert(0, data.get('aprs_thursday_time', '20:00'))
         else:
             entries['comment'].insert(0, "APRS Background Beacon")
             entries['symbol'].insert(0, "X")
@@ -760,6 +863,7 @@ class APRSManagerGUI:
             comment = entries['comment'].get().strip()
             symbol = entries['symbol'].get().strip()
             interval_in = entries['interval'].get().strip()
+            aprs_thursday_time = time_ent.get().strip() or "20:00"
             
             if not name or not callsign or not lat_in or not lon_in:
                 messagebox.showerror("Hata", "Lütfen zorunlu alanları (Profil Adı, Çağrı İşareti, Koordinatlar) doldurun.", parent=form)
@@ -803,6 +907,7 @@ class APRSManagerGUI:
                 "comment": comment if comment else "APRS Background Beacon",
                 "interval_minutes": interval,
                 "aprs_thursday": thursday_var.get(),
+                "aprs_thursday_time": aprs_thursday_time,
                 "server": "rotate.aprs2.net",
                 "port": 14580
             }
@@ -916,6 +1021,8 @@ class APRSManagerGUI:
                     pass
 
     def trigger_self_update(self):
+        if not gui_require_auth(self.root):
+            return
         if messagebox.askyesno("Güncelleme", "Uygulamayı en son GitHub sürümüne güncellemek istiyor musunuz?"):
             success, msg = self_update()
             if success:
@@ -938,6 +1045,8 @@ class APRSManagerGUI:
                 messagebox.showerror("Hata", msg)
 
     def trigger_import(self):
+        if not gui_require_auth(self.root):
+            return
         file_path = filedialog.askopenfilename(
             filetypes=[("JSON Files", "*.json")],
             title="APRS Ayarlarını İçe Aktar"
@@ -1028,11 +1137,15 @@ def cli_interactive_menu():
             success, msg = export_settings(export_path)
             print(f"[+] {msg}" if success else f"[-] {msg}")
         elif choice == '9':
+            if not cli_require_auth():
+                continue
             import_path = input("İçe aktarılacak JSON dosya yolu: ").strip()
             if import_path:
                 success, msg = import_settings(import_path)
                 print(f"[+] {msg}" if success else f"[-] {msg}")
         elif choice == '10':
+            if not cli_require_auth():
+                continue
             print("[i] Güncelleme işlemi başlatılıyor...")
             success, msg = self_update()
             print(f"[+] {msg}" if success else f"[-] {msg}")
@@ -1057,6 +1170,8 @@ def main():
     elif args.command == 'edit':
         cli_edit()
     elif args.command == 'update':
+        if not cli_require_auth():
+            return
         print("[i] Güncelleme işlemi başlatılıyor...")
         success, msg = self_update()
         print(f"[+] {msg}" if success else f"[-] {msg}")
@@ -1067,6 +1182,8 @@ def main():
         success, msg = export_settings(path)
         print(f"[+] {msg}" if success else f"[-] {msg}")
     elif args.command == 'import':
+        if not cli_require_auth():
+            return
         path = args.profile_name
         if not path:
             print("Hata: İçe aktarılacak dosya yolunu belirtmelisiniz. (Örn: aprs_manager import backup.json)")
