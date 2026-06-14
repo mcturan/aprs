@@ -174,6 +174,13 @@ while ($true) {
     Write-Host "Hata: Aralık en az 1 dakika olmalıdır!" -ForegroundColor Red
 }
 
+# 6.5 APRS Perşembe Etkinliği
+$thursdayInput = (Read-Host "6.5 Her Perşembe APRS Perşembe etkinliğine katılım sağlansın mı? (ANSRVR) [y/N]").Trim().ToLower()
+$aprsThursday = $false
+if ($thursdayInput -eq "y") {
+    $aprsThursday = $true
+}
+
 # Yapılandırmayı JSON olarak kaydet
 $configJson = @"
 {
@@ -186,6 +193,7 @@ $configJson = @"
     "symbol_code": "$symbolCode",
     "comment": "$comment",
     "interval_minutes": $interval,
+    "aprs_thursday": $($aprsThursday.ToString().ToLower()),
     "server": "rotate.aprs2.net",
     "port": 14580
 }

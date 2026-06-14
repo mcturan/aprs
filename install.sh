@@ -46,18 +46,27 @@ if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
 fi
 
 # GUI Bağımlılıkları Kurulumu (Linux için)
+HAS_GUI=true
 if [ "$IS_ANDROID" = false ]; then
-    echo -e "${C_BLUE}[i] Arayüz ve Sistem Tepsisi (pystray, tkinter) kütüphaneleri kontrol ediliyor...${C_RESET}"
-    if ! python3 -c "import tkinter; import pystray" &>/dev/null; then
-        echo -e "${C_YELLOW}[!] Gerekli arayüz kütüphaneleri eksik. Kuruluyor...${C_RESET}"
-        if command -v apt-get &> /dev/null; then
-            echo -e "${C_BLUE}[i] Yükleme için sudo yetkisi istenebilir:${C_RESET}"
-            sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray
+    # Grafik ortam tespiti (DISPLAY değişkeni var mı?)
+    if [ -z "$DISPLAY" ]; then
+        HAS_GUI=false
+        echo -e "${C_YELLOW}[!] Grafik ekran (DISPLAY) ortamı bulunamadı. Headless kurulum yapılıyor.${C_RESET}"
+    fi
+
+    if [ "$HAS_GUI" = true ]; then
+        echo -e "${C_BLUE}[i] Arayüz ve Sistem Tepsisi (pystray, tkinter) kütüphaneleri kontrol ediliyor...${C_RESET}"
+        if ! python3 -c "import tkinter; import pystray" &>/dev/null; then
+            echo -e "${C_YELLOW}[!] Gerekli arayüz kütüphaneleri eksik. Kuruluyor...${C_RESET}"
+            if command -v apt-get &> /dev/null; then
+                echo -e "${C_BLUE}[i] Yükleme için sudo yetkisi istenebilir:${C_RESET}"
+                sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray
+            else
+                echo -e "${C_RED}[!] Hata: Paket yöneticisi (apt-get) bulunamadı. Lütfen python3-tk ve python3-pystray paketlerini kurun.${C_RESET}"
+            fi
         else
-            echo -e "${C_RED}[!] Hata: Paket yöneticisi (apt-get) bulunamadı. Lütfen python3-tk ve python3-pystray paketlerini kurun.${C_RESET}"
+            echo -e "${C_GREEN}[+] Gerekli arayüz paketleri hazır.${C_RESET}"
         fi
-    else
-        echo -e "${C_GREEN}[+] Gerekli arayüz paketleri hazır.${C_RESET}"
     fi
 fi
 
@@ -231,6 +240,14 @@ while true; do
     echo -e "${C_RED}Hata: Aralık en az 1 dakika olmalıdır!${C_RESET}"
 done
 
+# 6.5 APRS Perşembe Etkinliği
+read -p "6.5 Her Perşembe APRS Perşembe etkinliğine katılım sağlansın mı? (ANSRVR) [y/N]: " OPT_THURSDAY
+OPT_THURSDAY=$(echo "$OPT_THURSDAY" | tr 'A-Z' 'a-z' | xargs)
+APRS_THURSDAY="false"
+if [ "$OPT_THURSDAY" = "y" ]; then
+    APRS_THURSDAY="true"
+fi
+
 # Yapılandırmayı Kaydet
 cat <<EOF > "$PROFILES_DIR/$PROFILE_NAME.json"
 {
@@ -243,6 +260,7 @@ cat <<EOF > "$PROFILES_DIR/$PROFILE_NAME.json"
     "symbol_code": "$SYMBOL_CODE",
     "comment": "$COMMENT",
     "interval_minutes": $INTERVAL_MINUTES,
+    "aprs_thursday": $APRS_THURSDAY,
     "server": "rotate.aprs2.net",
     "port": 14580
 }
@@ -347,10 +365,11 @@ EOF
         loginctl enable-linger "$USER" 2>/dev/null
     fi
 
-    # Masaüstü Menü Kısayolu Oluşturma
-    DESKTOP_DIR="$HOME/.local/share/applications"
-    mkdir -p "$DESKTOP_DIR"
-    cat <<EOF > "$DESKTOP_DIR/aprs-manager.desktop"
+    # Masaüstü Menü Kısayolu Oluşturma (Sadece Grafik Arayüz varsa)
+    if [ "$HAS_GUI" = true ]; then
+        DESKTOP_DIR="$HOME/.local/share/applications"
+        mkdir -p "$DESKTOP_DIR"
+        cat <<EOF > "$DESKTOP_DIR/aprs-manager.desktop"
 [Desktop Entry]
 Type=Application
 Name=APRS Multi-Beacon Manager
@@ -360,12 +379,13 @@ Icon=radio
 Terminal=false
 Categories=Utility;Network;
 EOF
-    chmod +x "$DESKTOP_DIR/aprs-manager.desktop"
+        chmod +x "$DESKTOP_DIR/aprs-manager.desktop"
 
-    # Otomatik Başlangıca Yönetici Panelini Ekle
-    AUTOSTART_DIR="$HOME/.config/autostart"
-    mkdir -p "$AUTOSTART_DIR"
-    cp "$DESKTOP_DIR/aprs-manager.desktop" "$AUTOSTART_DIR/"
+        # Otomatik Başlangıca Yönetici Panelini Ekle
+        AUTOSTART_DIR="$HOME/.config/autostart"
+        mkdir -p "$AUTOSTART_DIR"
+        cp "$DESKTOP_DIR/aprs-manager.desktop" "$AUTOSTART_DIR/"
+    fi
 fi
 
 # Kurulum Sonu Bilgilendirmesi
@@ -375,14 +395,20 @@ echo -e "${C_GREEN}${C_BOLD}====================================================
 echo -e "${C_BOLD}Profil Adı     :${C_RESET} $PROFILE_NAME"
 echo -e "${C_BOLD}Çağrı İşareti  :${C_RESET} $CALLSIGN"
 echo -e "${C_BOLD}Sıklık         :${C_RESET} $INTERVAL_MINUTES dakikada bir"
+echo -e "${C_BOLD}APRS Perşembe  :${C_RESET} $([ "$APRS_THURSDAY" = "true" ] && echo "Etkin" || echo "Pasif")"
 echo -e "${C_BOLD}Otomatik Başlama:${C_RESET} Evet"
 if [ "$IS_ANDROID" = false ]; then
     echo -e "----------------------------------------------------------------"
-    echo -e "${C_CYAN}Masaüstü Arayüzü:${C_RESET} Uygulama Menüsünden 'APRS Multi-Beacon Manager'ı açabilirsiniz."
-    echo -e "${C_CYAN}Sistem Tepsisi  :${C_RESET} Uygulama açıldığında sağ üstte/sağ altta bir ikon belirecektir."
+    if [ "$HAS_GUI" = true ]; then
+        echo -e "${C_CYAN}Masaüstü Arayüzü:${C_RESET} Uygulama Menüsünden 'APRS Multi-Beacon Manager'ı açabilirsiniz."
+        echo -e "${C_CYAN}Sistem Tepsisi  :${C_RESET} Uygulama açıldığında sağ üstte/sağ altta bir ikon belirecektir."
+    else
+        echo -e "${C_YELLOW}Not: Grafik ekran bulunamadı (Headless). Yönetim panelini terminalden açabilirsiniz.${C_RESET}"
+    fi
     echo -e "${C_CYAN}Terminalden Yönetim:${C_RESET}"
-    echo -e "  - Profilleri Listele:  aprs_manager list"
-    echo -e "  - Servisi Başlat:      aprs_manager start $PROFILE_NAME"
-    echo -e "  - Servisi Durdur:      aprs_manager stop $PROFILE_NAME"
+    echo -e "  - Arayüzü/Menüyü Aç:   python3 $INSTALL_DIR/aprs_manager.py"
+    echo -e "  - Profilleri Listele:  python3 $INSTALL_DIR/aprs_manager.py list"
+    echo -e "  - Servisi Başlat:      python3 $INSTALL_DIR/aprs_manager.py start $PROFILE_NAME"
+    echo -e "  - Servisi Durdur:      python3 $INSTALL_DIR/aprs_manager.py stop $PROFILE_NAME"
 fi
 echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"

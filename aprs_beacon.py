@@ -6,6 +6,7 @@ import time
 import json
 import argparse
 import subprocess
+import threading
 from datetime import datetime
 
 # Path configuration
@@ -116,7 +117,7 @@ def get_termux_gps():
     log_message("HATA: Termux:API üzerinden hiçbir konum verisi alınamadı.")
     return None
 
-def send_beacon(config):
+def send_aprs_raw_packet(config, packet):
     callsign = config['callsign'].upper()
     passcode = config.get('passcode')
     if not passcode:
@@ -124,6 +125,76 @@ def send_beacon(config):
     
     server = config.get('server', 'rotate.aprs2.net')
     port = int(config.get('port', 14580))
+    
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(15)
+        s.connect((server, port))
+        
+        greeting = s.recv(1024).decode('utf-8', errors='ignore').strip()
+        
+        login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
+        s.sendall(login_str.encode('utf-8'))
+        
+        response = s.recv(1024).decode('utf-8', errors='ignore').strip()
+        
+        if "verified" not in response.lower() and "unverified" in response.lower():
+            log_message("UYARI: Yetkilendirme doğrulanamadı! Lütfen çağrı işaretinizi kontrol edin.")
+            
+        log_message(f"APRS Paket Gönderiliyor: {packet}")
+        s.sendall(f"{packet}\r\n".encode('utf-8'))
+        
+        time.sleep(2)
+        s.close()
+        return True
+    except Exception as e:
+        log_message(f"HATA: Paket gönderilemedi: {e}")
+        return False
+
+def send_aprs_thursday_sequence(config, today_str):
+    callsign = config['callsign'].upper()
+    log_message("[APRS Thursday] Başlatılıyor. ANSRVR grubuna katılım sağlanıyor...")
+    
+    # Message packet format: SENDER>APRS,TCPIP*::RECIPIENT:MESSAGE
+    # Recipient field must be exactly 9 characters, padded with spaces ("ANSRVR   ")
+    msg_packet1 = f"{callsign}>APRS,TCPIP*::ANSRVR   :CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY"
+    
+    success = send_aprs_raw_packet(config, msg_packet1)
+    if success:
+        log_message("[APRS Thursday] Katılım mesajı gönderildi: CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY")
+        log_message("[APRS Thursday] 5 dakika (300 saniye) bekleniyor...")
+        time.sleep(300)
+        
+        msg_packet2 = f"{callsign}>APRS,TCPIP*::ANSRVR   :U HOTG"
+        success2 = send_aprs_raw_packet(config, msg_packet2)
+        if success2:
+            log_message("[APRS Thursday] Ayrılma mesajı gönderildi: U HOTG")
+            # Save state in config file
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    current_config = json.load(f)
+                current_config['last_aprs_thursday_sent'] = today_str
+                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(current_config, f, indent=4)
+                log_message(f"[APRS Thursday] Durum başarıyla kaydedildi: {today_str}")
+            except Exception as e:
+                log_message(f"[APRS Thursday] HATA: Durum kaydedilemedi: {e}")
+        else:
+            log_message("[APRS Thursday] HATA: Ayrılma mesajı gönderilemedi.")
+    else:
+        # Reset flag to retry in next loop iteration if it failed
+        log_message("[APRS Thursday] HATA: Katılım mesajı gönderilemedi, bir sonraki döngüde tekrar denenecek.")
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                current_config = json.load(f)
+            current_config['last_aprs_thursday_sent'] = ""
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(current_config, f, indent=4)
+        except:
+            pass
+
+def send_beacon(config):
+    callsign = config['callsign'].upper()
     
     lat = None
     lon = None
@@ -151,35 +222,12 @@ def send_beacon(config):
     
     packet = f"{callsign}>APRS,TCPIP*:!{lat_str}{symbol_table}{lon_str}{symbol_code}{comment}"
     
-    log_message(f"APRS-IS sunucusuna bağlanılıyor ({server}:{port})...")
-    
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(15)
-        s.connect((server, port))
-        
-        greeting = s.recv(1024).decode('utf-8', errors='ignore').strip()
-        log_message(f"Sunucu Karşılama Mesajı: {greeting}")
-        
-        login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
-        s.sendall(login_str.encode('utf-8'))
-        
-        response = s.recv(1024).decode('utf-8', errors='ignore').strip()
-        log_message(f"Sunucu Yanıtı: {response}")
-        
-        if "verified" not in response.lower() and "unverified" in response.lower():
-            log_message("UYARI: Yetkilendirme doğrulanamadı! Lütfen çağrı işaretinizi kontrol edin.")
-        
-        log_message(f"Paket Gönderiliyor: {packet}")
-        s.sendall(f"{packet}\r\n".encode('utf-8'))
-        
-        time.sleep(2)
-        s.close()
+    log_message("Konum paketi gönderiliyor...")
+    success = send_aprs_raw_packet(config, packet)
+    if success:
         log_message("Paket başarıyla gönderildi ve bağlantı sonlandırıldı.")
         return True
-    except Exception as e:
-        log_message(f"HATA: Paket gönderilemedi: {e}")
-        return False
+    return False
 
 def main():
     parser = argparse.ArgumentParser(description="APRS Background Beacon Daemon")
@@ -211,6 +259,22 @@ def main():
                 config = json.load(f)
         except Exception:
             pass
+            
+        # APRS Thursday kontrolü
+        if config.get('aprs_thursday', False):
+            now = datetime.now()
+            if now.weekday() == 3: # 3 is Thursday (Mon=0, Tue=1, Wed=2, Thu=3)
+                today_str = now.strftime('%Y-%m-%d')
+                if config.get('last_aprs_thursday_sent', '') != today_str:
+                    try:
+                        # Lock early to prevent spawning multiple threads
+                        config['last_aprs_thursday_sent'] = today_str
+                        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                            json.dump(config, f, indent=4)
+                        
+                        threading.Thread(target=send_aprs_thursday_sequence, args=(config, today_str), daemon=True).start()
+                    except Exception as e:
+                        log_message(f"Thursday check error: {e}")
             
         send_beacon(config)
         log_message(f"{config.get('interval_minutes')} dakika boyunca bekleniyor...")

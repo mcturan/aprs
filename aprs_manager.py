@@ -196,12 +196,13 @@ def cli_list():
         return
     
     print("\n=== APRS Beacon Profilleri ===")
-    print(f"{'Profil Adı':<15} | {'Çağrı İşareti':<12} | {'Sıklık (Dk)':<12} | {'Durum':<10}")
-    print("-" * 60)
+    print(f"{'Profil Adı':<15} | {'Çağrı İşareti':<12} | {'Sıklık':<7} | {'Perşembe':<9} | {'Durum':<10}")
+    print("-" * 65)
     for name, data in profiles.items():
         running = is_profile_running(name)
         status_str = "\033[92mAktif\033[0m" if running else "\033[91mKapalı\033[0m"
-        print(f"{name:<15} | {data.get('callsign', 'N0CALL'):<12} | {data.get('interval_minutes', 5):<12} | {status_str:<10}")
+        thursday_str = "Aktif" if data.get('aprs_thursday', False) else "Pasif"
+        print(f"{name:<15} | {data.get('callsign', 'N0CALL'):<12} | {data.get('interval_minutes', 5):<7} | {thursday_str:<9} | {status_str:<10}")
     print()
 
 def cli_create():
@@ -252,6 +253,9 @@ def cli_create():
     except ValueError:
         interval = 5
 
+    thursday_input = input("APRS Perşembe etkinliğine katılsın mı? (ANSRVR) [y/N]: ").strip().lower()
+    aprs_thursday = thursday_input == 'y'
+
     data = {
         "callsign": callsign,
         "passcode": passcode,
@@ -262,6 +266,7 @@ def cli_create():
         "symbol_code": symbol_code,
         "comment": comment,
         "interval_minutes": interval,
+        "aprs_thursday": aprs_thursday,
         "server": "rotate.aprs2.net",
         "port": 14580
     }
@@ -431,6 +436,7 @@ class APRSManagerGUI:
             ("Çağrı İşareti:", data.get('callsign')),
             ("Sıklık:", f"{data.get('interval_minutes')} dakika"),
             ("Koordinat:", f"{data.get('latitude')}, {data.get('longitude')}"),
+            ("APRS Perşembe:", "Aktif (ANSRVR)" if data.get('aprs_thursday', False) else "Pasif"),
             ("Simge / Mesaj:", f"[{data.get('symbol_code')}] {data.get('comment')[:30]}")
         ]
         
@@ -522,7 +528,7 @@ class APRSManagerGUI:
         # Custom Form Window
         form = tk.Toplevel(self.root)
         form.title("Yeni Profil Ekle")
-        form.geometry("400x520")
+        form.geometry("400x570")
         form.configure(bg="#1e1e2e")
         form.resizable(False, False)
         
@@ -558,6 +564,13 @@ class APRSManagerGUI:
             entries[name] = ent
             
         fields_frame.grid_columnconfigure(0, weight=1)
+        
+        # Checkbox for APRS Thursday
+        thursday_var = tk.BooleanVar(value=False)
+        thursday_cb = tk.Checkbutton(fields_frame, text="APRS Perşembe Etkinliği (ANSRVR)", variable=thursday_var, 
+                                     font=("Outfit", 9, "bold"), fg="#cdd6f4", bg="#1e1e2e", activebackground="#1e1e2e", 
+                                     activeforeground="#cdd6f4", selectcolor="#313244")
+        thursday_cb.grid(row=len(labels)*2, column=0, sticky="w", pady=(10, 5))
         
         # Set default values
         entries['comment'].insert(0, "APRS Background Beacon")
@@ -614,6 +627,7 @@ class APRSManagerGUI:
                 "symbol_code": symbol if symbol else "X",
                 "comment": comment if comment else "APRS Background Beacon",
                 "interval_minutes": interval,
+                "aprs_thursday": thursday_var.get(),
                 "server": "rotate.aprs2.net",
                 "port": 14580
             }
@@ -717,6 +731,76 @@ class APRSManagerGUI:
                 except:
                     pass
 
+# --- CLI Interactive Mode & Helper ---
+def cli_show_logs_interactive(profile_name):
+    profiles = get_profiles()
+    if profile_name not in profiles:
+        print(f"Hata: '{profile_name}' adında bir profil bulunamadı.")
+        return
+        
+    log_path = os.path.join(LOGS_DIR, f"{profile_name}.log")
+    if not os.path.exists(log_path):
+        print("Log kaydı henüz oluşmadı. Servis çalışmaya başladığında loglar burada görünecektir.")
+        return
+        
+    print(f"\n--- {profile_name.upper()} LOGLARI (Çıkmak için Ctrl+C tuşlarına basın) ---")
+    try:
+        # Open and read last 20 lines
+        with open(log_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            for line in lines[-20:]:
+                print(line, end='')
+                
+            # Keep tailing
+            while True:
+                line = f.readline()
+                if not line:
+                    time.sleep(1)
+                    continue
+                print(line, end='')
+    except KeyboardInterrupt:
+        print("\nLog takibi sonlandırıldı.")
+
+def cli_interactive_menu():
+    while True:
+        print("\n=== APRS Multi-Beacon Yönetim Paneli (Terminal Modu) ===")
+        print("1) Profilleri Listele")
+        print("2) Yeni Profil Ekle")
+        print("3) Profil Başlat")
+        print("4) Profil Durdur")
+        print("5) Profil Sil")
+        print("6) Canlı Log İzleyici")
+        print("7) Çıkış")
+        print("-" * 50)
+        
+        choice = input("Seçiminiz [1-7]: ").strip()
+        
+        if choice == '1':
+            cli_list()
+        elif choice == '2':
+            cli_create()
+        elif choice == '3':
+            name = input("Başlatılacak profil adı: ").strip().lower()
+            if name:
+                cli_start(name)
+        elif choice == '4':
+            name = input("Durdurulacak profil adı: ").strip().lower()
+            if name:
+                cli_stop(name)
+        elif choice == '5':
+            name = input("Silinecek profil adı: ").strip().lower()
+            if name:
+                cli_delete(name)
+        elif choice == '6':
+            name = input("Logları izlenecek profil adı: ").strip().lower()
+            if name:
+                cli_show_logs_interactive(name)
+        elif choice == '7' or choice.lower() == 'exit':
+            print("Çıkış yapılıyor...")
+            break
+        else:
+            print("Geçersiz seçim. Lütfen 1-7 arasında bir değer girin.")
+
 # --- Entry Point / Argument Parsing ---
 def main():
     parser = argparse.ArgumentParser(description="APRS Multi-Beacon Management Utility")
@@ -745,24 +829,32 @@ def main():
         else:
             cli_stop(args.profile_name)
     elif args.command == 'gui':
-        if not GUI_AVAILABLE:
-            print("\033[91mHata: GUI kütüphaneleri (tkinter, pystray, pillow) kurulu değil.\033[0m")
-            print("Lütfen aşağıdaki komutları kullanarak gereksinimleri kurun:\n")
-            if IS_LINUX:
-                print("  sudo apt update && sudo apt install python3-tk python3-pystray -y")
-            elif IS_WINDOWS:
-                print("  pip install pystray Pillow")
-            print("\nYöneticiyi terminal üzerinden (CLI) kullanmaya devam edebilirsiniz. Kullanılabilir komutlar:")
-            print("  aprs_manager list")
-            print("  aprs_manager create")
-            print("  aprs_manager start <profil>")
-            print("  aprs_manager stop <profil>")
-            print("  aprs_manager delete <profil>")
-            sys.exit(1)
+        # Check if running in headless environment (no display server)
+        # On Linux, DISPLAY environment variable is required for X11/Tkinter.
+        is_headless = False
+        if IS_LINUX and 'DISPLAY' not in os.environ:
+            is_headless = True
             
-        root = tk.Tk()
-        app = APRSManagerGUI(root)
-        root.mainloop()
+        if not GUI_AVAILABLE or is_headless:
+            if is_headless:
+                print("\033[93m[!] Grafik sunucusu (DISPLAY) bulunamadı. Headless ortamdasınız.\033[0m")
+            else:
+                print("\033[91mHata: GUI kütüphaneleri (tkinter, pystray, pillow) kurulu değil.\033[0m")
+                
+            print("Yönetici terminal üzerinden (CLI) interaktif modda başlatılıyor...\n")
+            time.sleep(1)
+            cli_interactive_menu()
+            sys.exit(0)
+            
+        try:
+            root = tk.Tk()
+            app = APRSManagerGUI(root)
+            root.mainloop()
+        except Exception as e:
+            print(f"\033[91mGrafik arayüzü başlatılamadı: {e}\033[0m")
+            print("Yönetici terminal üzerinden (CLI) interaktif modda başlatılıyor...\n")
+            time.sleep(1)
+            cli_interactive_menu()
 
 if __name__ == '__main__':
     main()
