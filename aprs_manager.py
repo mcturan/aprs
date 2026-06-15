@@ -13,7 +13,7 @@ import hashlib
 from datetime import datetime
 
 # Base Directory Configurations
-BASE_DIR = os.path.expanduser('~/.aprs-beacon')
+BASE_DIR = os.environ.get('BASE_DIR', os.path.expanduser('~/.aprs-beacon'))
 PROFILES_DIR = os.path.join(BASE_DIR, 'profiles')
 LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 
