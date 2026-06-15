@@ -85,7 +85,10 @@ Servis ilk paketi gönderdikten sonra, istasyonunuzu canlı olarak [aprs.fi](htt
 Bu güncelleme ile artık aynı anda birden fazla APRS beacon'ını (örneğin farklı SSID veya çağrı işaretleri ile) çalıştırabilir ve bunları görsel arayüzden yönetebilirsiniz.
 
 ### Özellikler:
-- **Grafik Arayüz (GUI):** Sisteminizdeki tüm profilleri listeler, aktif/pasif durumlarını gösterir, tek tıklamayla başlatıp durdurmanızı sağlar.
+- **Grafik Arayüz (GUI):** Sisteminizdeki tüm profilleri listeler, aktif/pasif durumlarını gösterir, tek tıklamayla başlatıp durdurmanızı sağlar. **Aydınlık (light) temalı, temiz ve modern bir tasarıma sahiptir.**
+- **APRS Chat (Mesajlaşma):** Her profile ait özel "Chat" butonu ile diğer çağrı işaretlerine veya SMS/E-posta ağ geçitlerine (örneğin SMSGTE) doğrudan APRS kısa mesajı gönderip alabilirsiniz.
+- **Özelleştirilebilir Perşembe Etkinliği (APRS Thursday):** ANSRVR grubuna perşembe günleri gönderilen katılım mesajı metnini ve saatini her profil için ayrı ayrı özelleştirebilirsiniz.
+- **Otomatik Güncelleme Kontrolü:** Program günlük olarak arka planda en son sürümü kontrol eder, yeni bir sürüm varsa otomatik yükler ve sizi bilgilendirir.
 - **Sistem Tepsisi (Tray Icon):** Uygulama kapatıldığında arka planda sistem tepsisinde (görev çubuğunda) çalışmaya devam eder. Hızlıca durumları izleyebilir ve profilleri kontrol edebilirsiniz.
 - **Log İzleyici:** Her profile ait logları arayüz üzerinden canlı ve anlık olarak takip edebilirsiniz.
 - **CLI Modu:** GUI kütüphaneleri yüklü olmayan veya grafik arayüzü bulunmayan (headless) sunucularda terminal komutları ile tüm profilleri kolayca yönetebilirsiniz.
