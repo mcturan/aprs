@@ -929,8 +929,8 @@ class APRSManagerGUI:
         btn_container.pack(side="right", padx=25, pady=15)
         
         # Header Button Style config helper
-        def style_header_btn(btn, color_main, color_hover):
-            btn.configure(relief="flat", bd=0, highlightthickness=0, fg="#ffffff", activeforeground="#ffffff", font=("Helvetica", 9, "bold"), padx=12, pady=6)
+        def style_header_btn(btn, color_main, color_hover, text_fg="#ffffff"):
+            btn.configure(relief="flat", bd=0, highlightthickness=0, fg=text_fg, activeforeground=text_fg, font=("Helvetica", 9, "bold"), padx=12, pady=6)
             btn.bind("<Enter>", lambda e: btn.configure(bg=color_hover))
             btn.bind("<Leave>", lambda e: btn.configure(bg=color_main))
             
