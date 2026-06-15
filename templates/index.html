@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>APRS Multi-Beacon Control Center</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <style>
         :root {
             --bg: #f1f5f9;
@@ -149,6 +151,18 @@
 
         .stat-item.active-beacons span.val {
             color: var(--green);
+        }
+
+        /* --- Map Card --- */
+        .map-card-style {
+            background-color: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            height: 300px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            position: relative;
         }
 
         /* --- Main Content --- */
@@ -624,6 +638,14 @@
 
     <!-- Main Content -->
     <main>
+        <!-- Interactive Map Card -->
+        <div id="map-card" class="map-card-style" style="display: none;">
+            <div id="map" style="width: 100%; height: 100%;"></div>
+        </div>
+
+        <!-- Hidden input for file import -->
+        <input type="file" id="import-file-input" accept=".json" style="display: none;" onchange="handleImportFile(this)">
+
         <div id="welcome-message" class="welcome-card" style="display: none;">
             <h2>No APRS profiles configured.</h2>
             <p>Click '+ Add Profile' to create your first configuration.</p>
@@ -770,6 +792,10 @@
         let chatPollInterval = null;
         let activeChatProfile = null;
         let activeLogProfile = null;
+        
+        // Leaflet Map variables
+        let map = null;
+        let mapMarkers = {};
 
         // Fetch stats & profiles on startup
         document.addEventListener("DOMContentLoaded", () => {
@@ -788,7 +814,7 @@
 
         // Fetch Global Stats
         function fetchStats() {
-            fetch('/api/status')
+            fetch('api/status')
                 .then(r => r.json())
                 .then(data => {
                     document.getElementById("stat-profiles").innerText = data.total_profiles;
@@ -804,9 +830,84 @@
                 });
         }
 
+        // Initialize Map
+        function initMap(lat, lon) {
+            if (map) return;
+            map = L.map('map').setView([lat, lon], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // Update Map Markers dynamically
+        function updateMapMarkers(profiles) {
+            const mapCard = document.getElementById("map-card");
+            const coordsProfiles = profiles.filter(p => p.latitude && p.longitude);
+            
+            if (coordsProfiles.length === 0) {
+                mapCard.style.display = "none";
+                return;
+            }
+            
+            mapCard.style.display = "block";
+            
+            const first = coordsProfiles[0];
+            if (!map) {
+                initMap(first.latitude, first.longitude);
+            } else {
+                map.invalidateSize();
+            }
+            
+            // Remove deleted markers
+            const profileNames = profiles.map(p => p.name);
+            Object.keys(mapMarkers).forEach(name => {
+                if (!profileNames.includes(name)) {
+                    map.removeLayer(mapMarkers[name]);
+                    delete mapMarkers[name];
+                }
+            });
+            
+            // Add/Update markers
+            const bounds = [];
+            coordsProfiles.forEach(p => {
+                const lat = parseFloat(p.latitude);
+                const lon = parseFloat(p.longitude);
+                bounds.push([lat, lon]);
+                
+                const statusText = p.running ? 'ACTIVE' : 'STOPPED';
+                const statusColor = p.running ? 'var(--green)' : 'var(--red)';
+                
+                const popupContent = `
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 0.85rem; line-height: 1.4;">
+                        <strong style="color: var(--accent); font-size: 0.95rem;">${p.name.toUpperCase()}</strong> (${p.callsign})<br/>
+                        <span style="font-weight: 700; color: ${statusColor}">${statusText}</span><br/>
+                        <b>Coordinates:</b> ${lat}, ${lon}<br/>
+                        <b>Interval:</b> ${p.interval} min<br/>
+                        <b>Comment:</b> ${p.comment}<br/>
+                        <b>Packets Sent:</b> ${p.packets_sent}
+                    </div>
+                `;
+                
+                if (mapMarkers[p.name]) {
+                    mapMarkers[p.name].setLatLng([lat, lon]);
+                    mapMarkers[p.name].getPopup().setContent(popupContent);
+                } else {
+                    const marker = L.marker([lat, lon]).addTo(map);
+                    marker.bindPopup(popupContent);
+                    mapMarkers[p.name] = marker;
+                }
+            });
+            
+            // Pan & zoom to fit markers
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [40, 40] });
+            }
+        }
+
         // Fetch Profiles List
         function fetchProfiles() {
-            fetch('/api/profiles')
+            fetch('api/profiles')
                 .then(r => r.json())
                 .then(profiles => {
                     const container = document.getElementById("profiles-container");
@@ -815,11 +916,15 @@
                     if (profiles.length === 0) {
                         container.style.display = "none";
                         welcome.style.display = "block";
+                        updateMapMarkers([]);
                         return;
                     }
 
                     welcome.style.display = "none";
                     container.style.display = "flex";
+                    
+                    // Render Map markers
+                    updateMapMarkers(profiles);
                     
                     // Generate HTML cards
                     let html = '';
@@ -866,7 +971,7 @@
                                     <div class="profile-actions">
                                         <button class="${toggleBtnClass}" onclick="toggleProfile('${p.name}')">${toggleBtnText}</button>
                                         <button class="btn-gray" onclick="openLogsModal('${p.name}')">Logs</button>
-                                        <button class="btn-gray" style="background-color: var(--purple-bg); color: var(--purple);" onclick="openChatModal('${p.name}', '${p.callsign}')">Chat</button>
+                                        <button class="btn-gray" style="background-color: #f3e8ff; color: var(--purple);" onclick="openChatModal('${p.name}', '${p.callsign}')">Chat</button>
                                         <button class="btn-gray" style="color: #2563eb;" onclick="openMapLink('${p.callsign}')">Map</button>
                                         <button class="btn-gray" onclick="openEditProfileModal(${JSON.stringify(p).replace(/"/g, '&quot;')})">Edit</button>
                                         <button class="btn-gray" style="color: var(--red);" onclick="deleteProfile('${p.name}')">Delete</button>
@@ -883,7 +988,7 @@
 
         // Action: Toggle Active status
         function toggleProfile(name) {
-            fetch(`/api/profiles/${name}/toggle`, { method: 'POST' })
+            fetch(`api/profiles/${name}/toggle`, { method: 'POST' })
                 .then(r => r.json())
                 .then(res => {
                     fetchProfiles();
@@ -893,7 +998,7 @@
 
         // Action: Toggle Autostart checkbox
         function toggleAutostart(name, enable) {
-            fetch(`/api/profiles/${name}/autostart`, {
+            fetch(`api/profiles/${name}/autostart`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enable })
@@ -908,7 +1013,7 @@
         // Action: Delete Profile
         function deleteProfile(name) {
             if (confirm(`Are you sure you want to delete profile '${name}'?`)) {
-                fetch(`/api/profiles/${name}/delete`, { method: 'POST' })
+                fetch(`api/profiles/${name}/delete`, { method: 'POST' })
                     .then(r => r.json())
                     .then(res => {
                         fetchProfiles();
@@ -999,7 +1104,7 @@
                 autostart: document.getElementById("form-autostart").checked
             };
 
-            fetch('/api/profiles/save', {
+            fetch('api/profiles/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
@@ -1028,7 +1133,7 @@
 
         function pollLogs() {
             if (!activeLogProfile) return;
-            fetch(`/api/profiles/${activeLogProfile}/logs`)
+            fetch(`api/profiles/${activeLogProfile}/logs`)
                 .then(r => r.json())
                 .then(data => {
                     const consoleElement = document.getElementById("log-console");
@@ -1050,7 +1155,7 @@
 
         function pollChat() {
             if (!activeChatProfile) return;
-            fetch(`/api/chat/messages?profile=${activeChatProfile}`)
+            fetch(`api/chat/messages?profile=${activeChatProfile}`)
                 .then(r => r.json())
                 .then(msgs => {
                     const chatBox = document.getElementById("chat-box");
@@ -1078,11 +1183,13 @@
                 });
         }
 
+        // Character counter
         function updateChatCharCount(input) {
             const count = input.value.length;
             document.getElementById("chat-counter").innerText = `${count}/67`;
         }
 
+        // Send Chat
         function sendChatMessage() {
             const toCallsign = document.getElementById("chat-recipient").value.trim().toUpperCase();
             const message = document.getElementById("chat-msg").value.trim();
@@ -1093,7 +1200,7 @@
             sendBtn.disabled = true;
             sendBtn.innerText = "Sending...";
 
-            fetch('/api/chat/send', {
+            fetch('api/chat/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1117,27 +1224,121 @@
             });
         }
 
-        // Global Action button handlers
-        function triggerImport() {
-            const path = prompt("Enter the path to the backup JSON file to import:");
-            if (path) {
-                // We make an API request to perform the import or run cli import command
-                alert("Importing configurations...");
-                // Note: since import is not exposed in API, we can add import/export API if needed
-                // But we can notify the user to run it via CLI.
-            }
-        }
-
+        // JSON Settings Export (Download as file)
         function triggerExport() {
-            const path = prompt("Enter file path to save the backup JSON:");
-            if (path) {
-                alert("Exporting configurations...");
-            }
+            fetch('api/profiles')
+                .then(r => r.json())
+                .then(profiles => {
+                    if (profiles.length === 0) {
+                        alert("No profiles to export.");
+                        return;
+                    }
+                    const backup = {};
+                    profiles.forEach(p => {
+                        backup[p.name] = {
+                            callsign: p.callsign,
+                            passcode: p.passcode,
+                            latitude: p.latitude,
+                            longitude: p.longitude,
+                            use_termux_gps: false,
+                            symbol_table: "/",
+                            symbol_code: p.symbol,
+                            comment: p.comment,
+                            interval_minutes: p.interval,
+                            aprs_thursday: p.aprs_thursday,
+                            aprs_thursday_time: p.aprs_thursday_time,
+                            aprs_thursday_msg: p.aprs_thursday_msg,
+                            server: "rotate.aprs2.net",
+                            port: 14580
+                        };
+                    });
+                    
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 4));
+                    const downloadAnchor = document.createElement('a');
+                    downloadAnchor.setAttribute("href", dataStr);
+                    downloadAnchor.setAttribute("download", `aprs_backup_${new Date().toISOString().slice(0,10)}.json`);
+                    document.body.appendChild(downloadAnchor);
+                    downloadAnchor.click();
+                    downloadAnchor.remove();
+                });
         }
 
+        // Trigger file import dialog
+        function triggerImport() {
+            document.getElementById('import-file-input').click();
+        }
+
+        // Handle uploaded JSON file and import profiles
+        function handleImportFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    let profiles = [];
+                    
+                    if (data.profiles) {
+                        profiles = Object.entries(data.profiles).map(([name, p]) => ({ name, ...p }));
+                    } else if (Array.isArray(data)) {
+                        profiles = data;
+                    } else if (typeof data === 'object') {
+                        profiles = Object.entries(data).map(([name, p]) => ({ name, ...p }));
+                    }
+                    
+                    if (profiles.length === 0) {
+                        alert("No profiles found in the backup file.");
+                        return;
+                    }
+                    
+                    if (confirm(`Do you want to import ${profiles.length} profile(s)?`)) {
+                        let completed = 0;
+                        profiles.forEach(p => {
+                            const payload = {
+                                name: p.name || p.profile_name,
+                                callsign: p.callsign,
+                                passcode: p.passcode ? String(p.passcode) : "",
+                                interval: p.interval_minutes || p.interval || 5,
+                                latitude: p.latitude,
+                                longitude: p.longitude,
+                                symbol: p.symbol_code || p.symbol || "X",
+                                comment: p.comment,
+                                aprs_thursday: p.aprs_thursday || false,
+                                aprs_thursday_time: p.aprs_thursday_time || "20:00",
+                                aprs_thursday_msg: p.aprs_thursday_msg || "",
+                                autostart: false
+                            };
+                            
+                            fetch('api/profiles/save', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            })
+                            .then(r => r.json())
+                            .then(res => {
+                                completed++;
+                                if (completed === profiles.length) {
+                                    alert("All profiles imported successfully!");
+                                    fetchProfiles();
+                                    fetchStats();
+                                }
+                            });
+                        });
+                    }
+                } catch(err) {
+                    alert("Error parsing backup file: " + err);
+                }
+            };
+            reader.readAsText(file);
+            input.value = ''; // Reset
+        }
+
+        // Application Self Update check
         function triggerUpdate() {
             if (confirm("Check and fetch latest software updates?")) {
                 alert("Checking updates...");
+                // Handled in background loop natively daily, or via manual click if needed
             }
         }
     </script>
