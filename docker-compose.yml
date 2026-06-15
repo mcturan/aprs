@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  aprs-beacon-manager:
+    image: ghcr.io/mcturan/aprs:latest
+    container_name: aprs-beacon-manager
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - aprs-data:/root/.aprs-beacon
+    restart: unless-stopped
+
+volumes:
+  aprs-data:
