@@ -336,6 +336,35 @@ def get_packet_count(profile_name):
         pass
     return count
 
+# APRS-IS Messaging Helper Function
+def send_aprs_message(from_callsign, passcode, to_callsign, message_text):
+    server = "rotate.aprs2.net"
+    port = 14580
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5.0)
+        s.connect((server, port))
+        
+        # Receive greeting
+        s.recv(1024)
+        
+        # Login
+        login_str = f"user {from_callsign} pass {passcode} vers PyAPRSBeacon 1.0\r\n"
+        s.sendall(login_str.encode('utf-8'))
+        s.recv(1024)
+        
+        # Recipient callsign must be padded to exactly 9 characters
+        recipient_padded = f"{to_callsign:<9}"
+        packet = f"{from_callsign}>APRS,TCPIP*::{recipient_padded}:{message_text}"
+        s.sendall(f"{packet}\r\n".encode('utf-8'))
+        
+        # Hold connection slightly to ensure packet transmission completes
+        time.sleep(1.0)
+        s.close()
+        return True, "Message sent successfully."
+    except Exception as e:
+        return False, f"Failed to send message: {e}"
+
 # CLI Mode Implementation
 def cli_list():
     profiles = get_profiles()
@@ -518,6 +547,255 @@ def cli_edit():
         start_profile_service(name)
         print("[+] Profile restarted successfully.")
 
+# APRS-IS Messenger Window Class
+class APRSChatWindow(tk.Toplevel):
+    def __init__(self, parent, default_profile_name=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("APRS Messenger")
+        self.geometry("560x540")
+        self.configure(bg="#090a0f")
+        self.resizable(False, False)
+        
+        self.transient(parent)
+        self.grab_set()
+        
+        self.c_bg = "#090a0f"
+        self.c_card = "#131622"
+        self.c_border = "#1e293b"
+        self.c_text_main = "#f8fafc"
+        self.c_text_muted = "#64748b"
+        self.c_accent = "#38bdf8"
+        self.c_green = "#10b981"
+        self.c_red = "#f43f5e"
+        
+        self.profiles = get_profiles()
+        if not self.profiles:
+            messagebox.showerror("Error", "You must configure at least one profile to use APRS Chat.")
+            self.destroy()
+            return
+            
+        self.active_profile = default_profile_name or list(self.profiles.keys())[0]
+        
+        self.socket_listener = None
+        self.listener_running = False
+        self.socket_thread = None
+        
+        self.build_ui()
+        self.start_listener()
+        
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+    def build_ui(self):
+        # Header / Profile Info Frame
+        top_frame = tk.Frame(self, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border, padx=15, pady=12)
+        top_frame.pack(fill="x", side="top")
+        
+        # Dropdown grid
+        tk.Label(top_frame, text="From Profile:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).grid(row=0, column=0, sticky="w", pady=5)
+        
+        profile_names = list(self.profiles.keys())
+        self.profile_var = tk.StringVar(value=self.active_profile)
+        
+        # Option menu
+        self.profile_menu = ttk.OptionMenu(
+            top_frame, self.profile_var, self.active_profile, *profile_names, command=self.on_profile_change
+        )
+        self.profile_menu.grid(row=0, column=1, sticky="w", padx=10, pady=5)
+        self.profile_menu.configure(width=12)
+        
+        tk.Label(top_frame, text="To Callsign:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).grid(row=0, column=2, sticky="w", padx=(25, 0), pady=5)
+        
+        self.to_entry = tk.Entry(top_frame, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
+                                 bd=0, highlightthickness=1, highlightbackground=self.c_border, font=("Helvetica", 10), width=12)
+        self.to_entry.grid(row=0, column=3, sticky="w", padx=10, pady=5)
+        self.to_entry.insert(0, "SMSGTE") # Default to SMS gateway
+        
+        def to_focus_in(e): self.to_entry.configure(highlightbackground=self.c_accent)
+        def to_focus_out(e): self.to_entry.configure(highlightbackground=self.c_border)
+        self.to_entry.bind("<FocusIn>", to_focus_in)
+        self.to_entry.bind("<FocusOut>", to_focus_out)
+        
+        # Chat History Panel
+        chat_frame = tk.Frame(self, bg=self.c_bg)
+        chat_frame.pack(fill="both", expand=True, padx=20, pady=15)
+        
+        self.chat_area = tk.Text(chat_frame, bg="#0d0f18", fg=self.c_text_main, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
+                                 bd=0, highlightthickness=1, highlightbackground=self.c_border)
+        self.chat_area.pack(side="left", fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(chat_frame, orient="vertical", command=self.chat_area.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.chat_area.configure(yscrollcommand=scrollbar.set)
+        
+        self.chat_area.tag_config("system", foreground=self.c_text_muted, font=("Helvetica", 9, "italic"))
+        self.chat_area.tag_config("sent", foreground=self.c_green, font=("Helvetica", 9, "bold"))
+        self.chat_area.tag_config("received", foreground=self.c_accent, font=("Helvetica", 9, "bold"))
+        
+        # Bottom Input Frame
+        input_frame = tk.Frame(self, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border, padx=15, pady=10)
+        input_frame.pack(fill="x", side="bottom")
+        
+        self.msg_entry = tk.Entry(input_frame, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
+                                  bd=0, highlightthickness=1, highlightbackground=self.c_border, font=("Helvetica", 10))
+        self.msg_entry.pack(side="left", fill="x", expand=True, ipady=4, padx=(0, 10))
+        self.msg_entry.bind("<FocusIn>", lambda e: self.msg_entry.configure(highlightbackground=self.c_accent))
+        self.msg_entry.bind("<FocusOut>", lambda e: self.msg_entry.configure(highlightbackground=self.c_border))
+        
+        self.msg_entry.bind("<Return>", lambda e: self.send_message_action())
+        
+        self.char_lbl = tk.Label(input_frame, text="0/67", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_card)
+        self.char_lbl.pack(side="left", padx=(0, 10))
+        
+        def validate_msg(event):
+            val = self.msg_entry.get()
+            if len(val) > 67:
+                self.msg_entry.delete(67, tk.END)
+            self.char_lbl.configure(text=f"{min(len(val), 67)}/67")
+        self.msg_entry.bind("<KeyRelease>", validate_msg)
+        
+        self.send_btn = tk.Button(input_frame, text="Send", bg=self.c_green, fg="#ffffff", activeforeground="#ffffff",
+                                  relief="flat", bd=0, highlightthickness=0, font=("Helvetica", 9, "bold"), padx=15, pady=6,
+                                  command=self.send_message_action)
+        self.send_btn.pack(side="right")
+        self.send_btn.bind("<Enter>", lambda e: self.send_btn.configure(bg="#059669"))
+        self.send_btn.bind("<Leave>", lambda e: self.send_btn.configure(bg=self.c_green))
+
+    def on_profile_change(self, profile_name):
+        self.active_profile = profile_name
+        self.start_listener()
+        
+    def start_listener(self):
+        self.stop_listener()
+        if not self.active_profile or self.active_profile not in self.profiles:
+            return
+            
+        data = self.profiles[self.active_profile]
+        callsign = data.get('callsign', '').upper()
+        passcode = data.get('passcode')
+        if not passcode:
+            passcode = generate_aprs_passcode(callsign)
+            
+        self.listener_running = True
+        self.socket_thread = threading.Thread(
+            target=self.listener_worker,
+            args=(callsign, passcode),
+            daemon=True
+        )
+        self.socket_thread.start()
+        
+    def stop_listener(self):
+        self.listener_running = False
+        if self.socket_listener:
+            try:
+                self.socket_listener.close()
+            except:
+                pass
+            self.socket_listener = None
+
+    def listener_worker(self, callsign, passcode):
+        server = "rotate.aprs2.net"
+        port = 14580
+        try:
+            self.socket_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket_listener.settimeout(8.0)
+            self.socket_listener.connect((server, port))
+            
+            # Read greeting
+            self.socket_listener.recv(1024)
+            
+            # Login
+            login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
+            self.socket_listener.sendall(login_str.encode('utf-8'))
+            self.socket_listener.recv(1024)
+            
+            self.append_message("SYSTEM", f"Connected as {callsign}. Real-time chat enabled.")
+            
+            self.socket_listener.settimeout(None)
+            buffer = ""
+            while self.listener_running:
+                data = self.socket_listener.recv(4096)
+                if not data:
+                    break
+                buffer += data.decode('utf-8', errors='ignore')
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    self.parse_and_display_packet(line, callsign)
+        except Exception as e:
+            if self.listener_running:
+                self.append_message("SYSTEM", f"Connection lost: {e}")
+                
+    def parse_and_display_packet(self, line, my_callsign):
+        if "::" in line:
+            try:
+                parts = line.split("::", 1)
+                header = parts[0]
+                payload = parts[1]
+                
+                sender = header.split(">", 1)[0].strip()
+                if ":" in payload:
+                    recipient_part, msg_text = payload.split(":", 1)
+                    recipient = recipient_part.strip()
+                    msg_text = msg_text.strip()
+                    
+                    if recipient == my_callsign:
+                        self.append_message(sender, msg_text)
+            except:
+                pass
+                
+    def append_message(self, sender, text):
+        if not self.winfo_exists():
+            return
+        self.chat_area.configure(state="normal")
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        if sender == "SYSTEM":
+            self.chat_area.insert(tk.END, f"[{timestamp}] SYSTEM: {text}\n", "system")
+        elif sender == "YOU":
+            self.chat_area.insert(tk.END, f"[{timestamp}] YOU: {text}\n", "sent")
+        else:
+            self.chat_area.insert(tk.END, f"[{timestamp}] <{sender}> {text}\n", "received")
+        self.chat_area.see(tk.END)
+        self.chat_area.configure(state="disabled")
+
+    def send_message_action(self):
+        to_callsign = self.to_entry.get().strip().upper()
+        msg_text = self.msg_entry.get().strip()
+        if not to_callsign or not msg_text:
+            return
+        if not self.active_profile or self.active_profile not in self.profiles:
+            return
+        data = self.profiles[self.active_profile]
+        from_callsign = data.get('callsign', '').upper()
+        passcode = data.get('passcode')
+        if not passcode:
+            passcode = generate_aprs_passcode(from_callsign)
+            
+        self.send_btn.configure(state="disabled")
+        
+        def send_worker():
+            success, res_msg = send_aprs_message(from_callsign, passcode, to_callsign, msg_text)
+            if self.winfo_exists():
+                self.parent.after(0, lambda: self.on_send_complete(success, to_callsign, msg_text, res_msg))
+                
+        threading.Thread(target=send_worker, daemon=True).start()
+        
+    def on_send_complete(self, success, to_callsign, msg_text, res_msg):
+        self.send_btn.configure(state="normal")
+        if success:
+            self.append_message("YOU", f"To {to_callsign}: {msg_text}")
+            self.msg_entry.delete(0, tk.END)
+            self.char_lbl.configure(text="0/67")
+        else:
+            messagebox.showerror("Error", res_msg, parent=self)
+            
+    def on_close(self):
+        self.stop_listener()
+        self.grab_release()
+        self.destroy()
+
 # GUI Mode Implementation - Modernized Obsidian Theme
 class APRSManagerGUI:
     def __init__(self, root):
@@ -540,6 +818,9 @@ class APRSManagerGUI:
         self.c_red_bg = "#450a0a"     # Dark rose bg for stopped pill
         self.c_btn_gray = "#334155"   # Gray button
         
+        # Dictionary of references to profile card widgets to update dynamically (flicker-free)
+        self.profile_cards = {}
+        
         # Initialize connection status variable
         self.server_status = "Checking connection..."
         self.server_status_color = self.c_text_muted
@@ -558,7 +839,7 @@ class APRSManagerGUI:
         self.build_ui()
         
         # Load Profiles
-        self.refresh_profiles()
+        self.refresh_profiles(force_rebuild=True)
         
         # System Tray Integration
         self.tray_icon = None
@@ -618,6 +899,11 @@ class APRSManagerGUI:
         add_btn = tk.Button(btn_container, text="+ Add Profile", bg=self.c_green, command=self.open_add_profile_dialog)
         add_btn.pack(side="left", padx=4)
         style_header_btn(add_btn, self.c_green, "#059669")
+        
+        # APRS Chat Button
+        chat_header_btn = tk.Button(btn_container, text="APRS Chat", bg="#8b5cf6", command=self.open_chat_window)
+        chat_header_btn.pack(side="left", padx=4)
+        style_header_btn(chat_header_btn, "#8b5cf6", "#7c3aed")
         
         # Test Server Button
         test_btn = tk.Button(btn_container, text="Test server", bg="#4f46e5", command=self.trigger_server_test)
@@ -684,11 +970,7 @@ class APRSManagerGUI:
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
-    def refresh_profiles(self):
-        # Clear current grid widgets
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-            
+    def refresh_profiles(self, force_rebuild=False):
         profiles = get_profiles()
         
         # Update Stats Panel
@@ -696,19 +978,66 @@ class APRSManagerGUI:
         active_count = sum(1 for name in profiles.keys() if is_profile_running(name))
         self.active_beacons_lbl.configure(text=f"Active Beacons: {active_count}")
         
-        if not profiles:
-            self.welcome_label.pack(pady=100)
-            self.canvas.pack_forget()
-            self.scrollbar.pack_forget()
-            return
-        else:
-            self.welcome_label.pack_forget()
-            self.canvas.pack(side="left", fill="both", expand=True)
-            self.scrollbar.pack(side="right", fill="y")
+        # Check if the profiles set changed to decide on rebuilding
+        current_names = set(profiles.keys())
+        existing_names = set(self.profile_cards.keys())
+        
+        if force_rebuild or current_names != existing_names:
+            # Clear current grid widgets
+            for widget in self.scrollable_frame.winfo_children():
+                widget.destroy()
+            self.profile_cards.clear()
             
-        # Draw Profile Cards
-        for idx, (name, data) in enumerate(profiles.items()):
-            self.create_profile_card(name, data, idx)
+            if not profiles:
+                self.welcome_label.pack(pady=100)
+                self.canvas.pack_forget()
+                self.scrollbar.pack_forget()
+                return
+            else:
+                self.welcome_label.pack_forget()
+                self.canvas.pack(side="left", fill="both", expand=True)
+                self.scrollbar.pack(side="right", fill="y")
+                
+            # Draw Profile Cards
+            for idx, (name, data) in enumerate(profiles.items()):
+                self.create_profile_card(name, data, idx)
+        else:
+            # Update current cards in-place (flicker-free refresh)
+            for name, data in profiles.items():
+                if name in self.profile_cards:
+                    card_data = self.profile_cards[name]
+                    running = is_profile_running(name)
+                    
+                    status_color = self.c_green if running else self.c_red
+                    status_bg = self.c_green_bg if running else self.c_red_bg
+                    status_text = "ACTIVE" if running else "STOPPED"
+                    
+                    # Update status indicator colors & pill texts
+                    card_data['accent_bar'].configure(bg=status_color)
+                    card_data['pill_frame'].configure(bg=status_bg)
+                    card_data['pill_lbl'].configure(text=status_text, fg=status_color, bg=status_bg)
+                    
+                    # Update toggle action button states
+                    toggle_txt = "STOP" if running else "START"
+                    toggle_color = self.c_red if running else self.c_green
+                    toggle_hover = "#be123c" if running else "#047857"
+                    
+                    card_data['toggle_btn'].configure(text=toggle_txt, bg=toggle_color)
+                    card_data['toggle_btn'].configure(command=lambda n=name, r=running: self.toggle_profile(n, r))
+                    
+                    btn = card_data['toggle_btn']
+                    btn.bind("<Enter>", lambda e, b=btn, h=toggle_hover: b.configure(bg=h))
+                    btn.bind("<Leave>", lambda e, b=btn, c=toggle_color: b.configure(bg=c))
+                    
+                    # Update packets transmitted metric
+                    packets_sent = get_packet_count(name)
+                    card_data['packets_lbl'].configure(
+                        text=f"Packets Sent: {packets_sent}",
+                        fg=self.c_green if packets_sent > 0 else self.c_text_muted
+                    )
+                    
+                    # Update autostart checkbox
+                    card_data['autostart_var'].set(is_service_enabled(name))
 
     def create_profile_card(self, name, data, idx):
         running = is_profile_running(name)
@@ -724,26 +1053,33 @@ class APRSManagerGUI:
         accent_bar = tk.Frame(card, bg=status_color, width=5)
         accent_bar.pack(side="left", fill="y", padx=(0, 15))
         
-        # 2. Info Block (Name, Callsign, Status Pill)
-        info_block = tk.Frame(card, bg=self.c_card)
-        info_block.pack(side="left", fill="y")
+        # 2. Main Content Frame (Nested inside Card, holds Row 1 and Row 2)
+        content_frame = tk.Frame(card, bg=self.c_card)
+        content_frame.pack(side="left", fill="both", expand=True)
         
-        name_lbl = tk.Label(info_block, text=name.upper(), font=("Helvetica", 13, "bold"), fg=self.c_accent_cyan, bg=self.c_card)
+        # --- Row 1: Profile Details Grid ---
+        row1 = tk.Frame(content_frame, bg=self.c_card)
+        row1.pack(side="top", fill="x")
+        
+        # Left Block: Name & Status Pill
+        info_block = tk.Frame(row1, bg=self.c_card)
+        info_block.pack(side="left", anchor="nw")
+        
+        name_lbl = tk.Label(info_block, text=name.upper(), font=("Helvetica", 12, "bold"), fg=self.c_accent_cyan, bg=self.c_card)
         name_lbl.pack(anchor="w")
         
-        call_lbl = tk.Label(info_block, text=data.get('callsign', 'N0CALL'), font=("Helvetica", 11, "bold"), fg=self.c_text_main, bg=self.c_card)
-        call_lbl.pack(anchor="w", pady=(2, 4))
+        call_lbl = tk.Label(info_block, text=data.get('callsign', 'N0CALL'), font=("Helvetica", 10, "bold"), fg=self.c_text_main, bg=self.c_card)
+        call_lbl.pack(anchor="w", pady=(1, 3))
         
-        # Status Pill Frame
         pill_frame = tk.Frame(info_block, bg=status_bg, padx=8, pady=2)
         pill_frame.pack(anchor="w")
         
         pill_lbl = tk.Label(pill_frame, text=status_text, font=("Helvetica", 8, "bold"), fg=status_color, bg=status_bg)
         pill_lbl.pack()
         
-        # 3. Details Block (Interval, Location, Comment)
-        details_block = tk.Frame(card, bg=self.c_card)
-        details_block.pack(side="left", fill="both", expand=True, padx=25)
+        # Right Block: Grid parameters
+        details_block = tk.Frame(row1, bg=self.c_card)
+        details_block.pack(side="left", fill="x", expand=True, padx=(30, 0))
         
         lbl_style = {"font": ("Helvetica", 9, "bold"), "fg": self.c_text_muted, "bg": self.c_card}
         val_style = {"font": ("Helvetica", 9), "fg": self.c_text_main, "bg": self.c_card}
@@ -752,22 +1088,27 @@ class APRSManagerGUI:
         if len(comment_val) > 42:
             comment_val = comment_val[:39] + "..."
             
-        tk.Label(details_block, text="Interval:", **lbl_style).grid(row=0, column=0, sticky="w", pady=2)
-        tk.Label(details_block, text=f"{data.get('interval_minutes')} minutes", **val_style).grid(row=0, column=1, sticky="w", padx=10, pady=2)
+        tk.Label(details_block, text="Interval:", **lbl_style).grid(row=0, column=0, sticky="w", pady=1)
+        tk.Label(details_block, text=f"{data.get('interval_minutes')} minutes", **val_style).grid(row=0, column=1, sticky="w", padx=10, pady=1)
         
-        tk.Label(details_block, text="Location:", **lbl_style).grid(row=1, column=0, sticky="w", pady=2)
-        tk.Label(details_block, text=f"{data.get('latitude')}, {data.get('longitude')} ({data.get('symbol_code', 'X')})", **val_style).grid(row=1, column=1, sticky="w", padx=10, pady=2)
+        tk.Label(details_block, text="Location:", **lbl_style).grid(row=1, column=0, sticky="w", pady=1)
+        location_val_lbl = tk.Label(details_block, text=f"{data.get('latitude')}, {data.get('longitude')} ({data.get('symbol_code', 'X')})", **val_style)
+        location_val_lbl.grid(row=1, column=1, sticky="w", padx=10, pady=1)
         
-        tk.Label(details_block, text="Comment:", **lbl_style).grid(row=2, column=0, sticky="w", pady=2)
-        tk.Label(details_block, text=comment_val, **val_style).grid(row=2, column=1, sticky="w", padx=10, pady=2)
+        tk.Label(details_block, text="Comment:", **lbl_style).grid(row=2, column=0, sticky="w", pady=1)
+        tk.Label(details_block, text=comment_val, **val_style).grid(row=2, column=1, sticky="w", padx=10, pady=1)
         
-        # 4. Metrics & Autostart Block (Packets, Autostart Checkbox)
-        metrics_block = tk.Frame(card, bg=self.c_card)
-        metrics_block.pack(side="left", fill="y", padx=15)
+        # --- Row 2: Metrics & Actions (Prevents Horizontal Button Overflow) ---
+        row2 = tk.Frame(content_frame, bg=self.c_card)
+        row2.pack(side="top", fill="x", pady=(12, 0))
+        
+        # Metrics block (left align)
+        metrics_block = tk.Frame(row2, bg=self.c_card)
+        metrics_block.pack(side="left", fill="y", anchor="center")
         
         packets_sent = get_packet_count(name)
         packets_lbl = tk.Label(metrics_block, text=f"Packets Sent: {packets_sent}", font=("Helvetica", 9, "bold"), fg=self.c_green if packets_sent > 0 else self.c_text_muted, bg=self.c_card)
-        packets_lbl.pack(anchor="w", pady=(0, 6))
+        packets_lbl.pack(side="left", padx=(0, 20))
         
         # Autostart checkbox
         autostart_var = tk.BooleanVar(value=is_service_enabled(name))
@@ -775,10 +1116,10 @@ class APRSManagerGUI:
                                      font=("Helvetica", 9), fg=self.c_text_main, bg=self.c_card, 
                                      activebackground=self.c_card, activeforeground=self.c_text_main, 
                                      selectcolor=self.c_bg, command=lambda n=name, v=autostart_var: set_service_enabled(n, v.get()))
-        autostart_cb.pack(anchor="w")
+        autostart_cb.pack(side="left")
         
-        # 5. Right Actions Block (Start/Stop, Logs, Map, Edit, Delete)
-        actions_block = tk.Frame(card, bg=self.c_card)
+        # Actions block (right align)
+        actions_block = tk.Frame(row2, bg=self.c_card)
         actions_block.pack(side="right", fill="y")
         
         toggle_txt = "STOP" if running else "START"
@@ -799,6 +1140,11 @@ class APRSManagerGUI:
         log_btn.pack(side="left", padx=2)
         style_action_btn(log_btn, self.c_btn_gray, "#475569")
         
+        # APRS Messenger button
+        chat_btn = tk.Button(actions_block, text="Chat", bg="#8b5cf6", command=lambda n=name: self.open_chat_window(n))
+        chat_btn.pack(side="left", padx=2)
+        style_action_btn(chat_btn, "#8b5cf6", "#7c3aed")
+        
         map_btn = tk.Button(actions_block, text="Map", bg="#1e3a8a", command=lambda c=data.get('callsign'): self.open_map_link(c))
         map_btn.pack(side="left", padx=2)
         style_action_btn(map_btn, "#1e3a8a", "#1d4ed8")
@@ -810,6 +1156,18 @@ class APRSManagerGUI:
         del_btn = tk.Button(actions_block, text="Delete", bg="#7c2d12", command=lambda n=name: self.delete_profile(n))
         del_btn.pack(side="left", padx=2)
         style_action_btn(del_btn, "#7c2d12", "#9a3412")
+        
+        # Save references for dynamic updating
+        self.profile_cards[name] = {
+            'card': card,
+            'accent_bar': accent_bar,
+            'pill_frame': pill_frame,
+            'pill_lbl': pill_lbl,
+            'location_val_lbl': location_val_lbl,
+            'toggle_btn': toggle_btn,
+            'packets_lbl': packets_lbl,
+            'autostart_var': autostart_var
+        }
 
     def toggle_profile(self, name, currently_running):
         if currently_running:
@@ -843,7 +1201,7 @@ class APRSManagerGUI:
             return
         if messagebox.askyesno("Delete Profile", f"Are you sure you want to delete profile '{name}' and all its files?"):
             delete_profile_files(name)
-            self.refresh_profiles()
+            self.refresh_profiles(force_rebuild=True)
             self.update_tray_menu()
 
     def open_log_viewer(self, name):
@@ -884,6 +1242,9 @@ class APRSManagerGUI:
             log_win.after(2000, update_logs)
             
         update_logs()
+
+    def open_chat_window(self, default_profile_name=None):
+        APRSChatWindow(self.root, default_profile_name)
 
     def open_add_profile_dialog(self, edit_profile_name=None):
         if not edit_profile_name and not IS_BYPASS and len(get_profiles()) >= 2:
@@ -1052,7 +1413,7 @@ class APRSManagerGUI:
             }
             save_profile(name, data)
             form.destroy()
-            self.refresh_profiles()
+            self.refresh_profiles(force_rebuild=True)
             self.update_tray_menu()
             
             if edit_profile_name:
@@ -1060,13 +1421,13 @@ class APRSManagerGUI:
                     stop_profile_service(name)
                     time.sleep(0.5)
                     start_profile_service(name)
-                    self.refresh_profiles()
+                    self.refresh_profiles(force_rebuild=True)
                     self.update_tray_menu()
                 messagebox.showinfo("Success", f"Profile '{name}' updated successfully.")
             else:
                 if messagebox.askyesno("Start Service", f"Profile '{name}' configured. Run background daemon now?"):
                     start_profile_service(name)
-                    self.refresh_profiles()
+                    self.refresh_profiles(force_rebuild=True)
                     self.update_tray_menu()
                     
         save_btn = tk.Button(form, text="Save Settings", bg=self.c_green, command=save_new)
@@ -1114,7 +1475,7 @@ class APRSManagerGUI:
         for name in profiles.keys():
             start_profile_service(name)
         time.sleep(0.5)
-        self.root.after(0, self.refresh_profiles)
+        self.root.after(0, lambda: self.refresh_profiles(force_rebuild=False))
         self.root.after(0, self.update_tray_menu)
 
     def stop_all_profiles(self):
@@ -1122,7 +1483,7 @@ class APRSManagerGUI:
         for name in profiles.keys():
             stop_profile_service(name)
         time.sleep(0.5)
-        self.root.after(0, self.refresh_profiles)
+        self.root.after(0, lambda: self.refresh_profiles(force_rebuild=False))
         self.root.after(0, self.update_tray_menu)
 
     def minimize_to_tray(self):
@@ -1146,7 +1507,7 @@ class APRSManagerGUI:
             time.sleep(10)
             if self.running and self.root.winfo_exists():
                 try:
-                    self.root.after(0, self.refresh_profiles)
+                    self.root.after(0, lambda: self.refresh_profiles(force_rebuild=False))
                 except:
                     pass
 
@@ -1214,7 +1575,7 @@ class APRSManagerGUI:
             success, msg = import_settings(file_path)
             if success:
                 messagebox.showinfo("Success", msg)
-                self.refresh_profiles()
+                self.refresh_profiles(force_rebuild=True)
                 self.update_tray_menu()
             else:
                 messagebox.showerror("Error", msg)
