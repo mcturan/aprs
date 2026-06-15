@@ -253,6 +253,11 @@ def self_update():
             res = subprocess.run(['powershell', '-Command', 'git pull'], cwd=repo_path, capture_output=True, text=True)
             if res.returncode != 0:
                 return False, f"Git Pull Error:\n{res.stderr}"
+        
+        stdout_lower = res.stdout.lower()
+        if "already up to date" in stdout_lower or "already up-to-date" in stdout_lower or "zaten güncel" in stdout_lower:
+            return True, "Already up-to-date."
+            
         import shutil
         shutil.copy2(os.path.join(repo_path, 'aprs_beacon.py'), os.path.join(BASE_DIR, 'aprs_beacon.py'))
         shutil.copy2(os.path.join(repo_path, 'aprs_manager.py'), os.path.join(BASE_DIR, 'aprs_manager.py'))
@@ -431,8 +436,10 @@ def cli_create():
     thursday_input = input("Participate in APRS Thursday? (ANSRVR) [y/N]: ").strip().lower()
     aprs_thursday = thursday_input == 'y'
     aprs_thursday_time = "20:00"
+    aprs_thursday_msg = "CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY"
     if aprs_thursday:
         aprs_thursday_time = input("APRS Thursday time (e.g. 20:00) [Default: 20:00]: ").strip() or "20:00"
+        aprs_thursday_msg = input("APRS Thursday message [Default: CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY]: ").strip() or "CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY"
     data = {
         "callsign": callsign,
         "passcode": passcode,
@@ -445,6 +452,7 @@ def cli_create():
         "interval_minutes": interval,
         "aprs_thursday": aprs_thursday,
         "aprs_thursday_time": aprs_thursday_time,
+        "aprs_thursday_msg": aprs_thursday_msg,
         "server": "rotate.aprs2.net",
         "port": 14580
     }
@@ -519,10 +527,14 @@ def cli_edit():
     if thursday_in:
         aprs_thursday = thursday_in == 'y'
     aprs_thursday_time = data.get('aprs_thursday_time', '20:00')
+    aprs_thursday_msg = data.get('aprs_thursday_msg', 'CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY')
     if aprs_thursday:
         thursday_time_in = input(f"APRS Thursday time ({aprs_thursday_time}): ").strip()
         if thursday_time_in:
             aprs_thursday_time = thursday_time_in
+        thursday_msg_in = input(f"APRS Thursday message ({aprs_thursday_msg}): ").strip()
+        if thursday_msg_in:
+            aprs_thursday_msg = thursday_msg_in
     updated_data = {
         "callsign": callsign,
         "passcode": passcode,
@@ -535,6 +547,7 @@ def cli_edit():
         "interval_minutes": interval,
         "aprs_thursday": aprs_thursday,
         "aprs_thursday_time": aprs_thursday_time,
+        "aprs_thursday_msg": aprs_thursday_msg,
         "server": "rotate.aprs2.net",
         "port": 14580
     }
@@ -560,14 +573,14 @@ class APRSChatWindow(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
         
-        self.c_bg = "#090a0f"
-        self.c_card = "#131622"
-        self.c_border = "#1e293b"
-        self.c_text_main = "#f8fafc"
-        self.c_text_muted = "#64748b"
-        self.c_accent = "#38bdf8"
-        self.c_green = "#10b981"
-        self.c_red = "#f43f5e"
+        self.c_bg = "#f1f5f9"
+        self.c_card = "#ffffff"
+        self.c_border = "#cbd5e1"
+        self.c_text_main = "#0f172a"
+        self.c_text_muted = "#475569"
+        self.c_accent = "#2563eb"
+        self.c_green = "#047857"
+        self.c_red = "#b91c1c"
         
         self.profiles = get_profiles()
         if not self.profiles:
@@ -620,7 +633,7 @@ class APRSChatWindow(tk.Toplevel):
         chat_frame = tk.Frame(self, bg=self.c_bg)
         chat_frame.pack(fill="both", expand=True, padx=20, pady=15)
         
-        self.chat_area = tk.Text(chat_frame, bg="#0d0f18", fg=self.c_text_main, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
+        self.chat_area = tk.Text(chat_frame, bg="#ffffff", fg=self.c_text_main, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
                                  bd=0, highlightthickness=1, highlightbackground=self.c_border)
         self.chat_area.pack(side="left", fill="both", expand=True)
         
@@ -806,17 +819,17 @@ class APRSManagerGUI:
         self.root.resizable(False, False)
         
         # Color Palettes
-        self.c_bg = "#090a0f"         # Dark Obsidian Abyss
-        self.c_card = "#131622"       # Sleek navy-slate card
-        self.c_border = "#1e293b"     # Slate border
-        self.c_text_main = "#f8fafc"  # Off-white main text
-        self.c_text_muted = "#64748b" # Slate gray muted text
-        self.c_accent_cyan = "#38bdf8"# Sky/cyan accent
-        self.c_green = "#10b981"      # Emerald active
-        self.c_green_bg = "#064e3b"   # Dark emerald bg for active pill
-        self.c_red = "#f43f5e"        # Rose red stopped
-        self.c_red_bg = "#450a0a"     # Dark rose bg for stopped pill
-        self.c_btn_gray = "#334155"   # Gray button
+        self.c_bg = "#f1f5f9"         # Soft slate/gray background
+        self.c_card = "#ffffff"       # White card
+        self.c_border = "#cbd5e1"     # Slate border
+        self.c_text_main = "#0f172a"  # Slate dark charcoal main text
+        self.c_text_muted = "#475569" # Slate gray muted text
+        self.c_accent_cyan = "#2563eb"# Premium Royal Blue/Indigo accent
+        self.c_green = "#047857"      # Dark emerald active text
+        self.c_green_bg = "#d1fae5"   # Light emerald bg for active pill
+        self.c_red = "#b91c1c"        # Dark red stopped text
+        self.c_red_bg = "#fee2e2"     # Light red bg for stopped pill
+        self.c_btn_gray = "#e2e8f0"   # Light gray button
         
         # Dictionary of references to profile card widgets to update dynamically (flicker-free)
         self.profile_cards = {}
@@ -852,18 +865,44 @@ class APRSManagerGUI:
         self.running = True
         self.refresh_thread = threading.Thread(target=self.auto_refresh_loop, daemon=True)
         self.refresh_thread.start()
-        
         self.ping_thread = threading.Thread(target=self.gateway_ping_loop, daemon=True)
         self.ping_thread.start()
+        
+        self.check_daily_update()
+
+    def check_daily_update(self):
+        update_flag_file = os.path.join(BASE_DIR, '.last_update_check')
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        
+        if os.path.exists(update_flag_file):
+            try:
+                with open(update_flag_file, 'r', encoding='utf-8') as f:
+                    last_check = f.read().strip()
+                if last_check == today_str:
+                    return
+            except:
+                pass
+                
+        def update_worker():
+            try:
+                success, msg = self_update()
+                with open(update_flag_file, 'w', encoding='utf-8') as f:
+                    f.write(today_str)
+                if success and "already" not in msg.lower():
+                    self.root.after(0, lambda: messagebox.showinfo("Auto Update", "A new update has been downloaded and installed! Please restart the application."))
+            except:
+                pass
+                
+        threading.Thread(target=update_worker, daemon=True).start()
 
     def create_icon_image(self):
         try:
             image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
             draw = ImageDraw.Draw(image)
-            draw.ellipse([4, 4, 60, 60], fill=(19, 22, 34, 255), outline=(56, 189, 248, 255), width=3)
-            draw.arc([16, 16, 48, 48], start=220, end=320, fill=(56, 189, 248, 255), width=3)
-            draw.arc([24, 24, 40, 40], start=220, end=320, fill=(16, 185, 129, 255), width=3)
-            draw.line([32, 36, 32, 52], fill=(248, 250, 252, 255), width=3)
+            draw.ellipse([4, 4, 60, 60], fill=(255, 255, 255, 255), outline=(37, 99, 235, 255), width=3)
+            draw.arc([16, 16, 48, 48], start=220, end=320, fill=(37, 99, 235, 255), width=3)
+            draw.arc([24, 24, 40, 40], start=220, end=320, fill=(4, 120, 87, 255), width=3)
+            draw.point([32, 32], fill=(4, 120, 87, 255))
             draw.ellipse([29, 32, 35, 35], fill=(244, 63, 94, 255))
             return image
         except:
@@ -900,30 +939,25 @@ class APRSManagerGUI:
         add_btn.pack(side="left", padx=4)
         style_header_btn(add_btn, self.c_green, "#059669")
         
-        # APRS Chat Button
-        chat_header_btn = tk.Button(btn_container, text="APRS Chat", bg="#8b5cf6", command=self.open_chat_window)
-        chat_header_btn.pack(side="left", padx=4)
-        style_header_btn(chat_header_btn, "#8b5cf6", "#7c3aed")
-        
         # Test Server Button
-        test_btn = tk.Button(btn_container, text="Test server", bg="#4f46e5", command=self.trigger_server_test)
+        test_btn = tk.Button(btn_container, text="Test server", bg="#3b82f6", command=self.trigger_server_test)
         test_btn.pack(side="left", padx=4)
-        style_header_btn(test_btn, "#4f46e5", "#4338ca")
+        style_header_btn(test_btn, "#3b82f6", "#2563eb")
         
         # Import settings Button
         import_btn = tk.Button(btn_container, text="Import Settings", bg=self.c_btn_gray, command=self.trigger_import)
         import_btn.pack(side="left", padx=4)
-        style_header_btn(import_btn, self.c_btn_gray, "#475569")
+        style_header_btn(import_btn, self.c_btn_gray, "#cbd5e1", "#334155")
         
         # Export settings Button
         export_btn = tk.Button(btn_container, text="Export Settings", bg=self.c_btn_gray, command=self.trigger_export)
         export_btn.pack(side="left", padx=4)
-        style_header_btn(export_btn, self.c_btn_gray, "#475569")
+        style_header_btn(export_btn, self.c_btn_gray, "#cbd5e1", "#334155")
         
         # Update App Button
-        update_btn = tk.Button(btn_container, text="Update App", bg="#d97706", command=self.trigger_self_update)
+        update_btn = tk.Button(btn_container, text="Update App", bg="#ea580c", command=self.trigger_self_update)
         update_btn.pack(side="left", padx=4)
-        style_header_btn(update_btn, "#d97706", "#b45309")
+        style_header_btn(update_btn, "#ea580c", "#c2410c")
         
         # Stats Dashboard Banner
         self.stats_frame = tk.Frame(self.root, bg=self.c_bg, height=45)
@@ -969,6 +1003,12 @@ class APRSManagerGUI:
         
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+        
+        # Footer Frame
+        footer_frame = tk.Frame(self.root, bg=self.c_bg)
+        footer_frame.pack(side="bottom", fill="x", pady=(5, 10))
+        footer_lbl = tk.Label(footer_frame, text="APRS Multi-Beacon Control Center  |  by TA1XTA", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg)
+        footer_lbl.pack(anchor="center")
 
     def refresh_profiles(self, force_rebuild=False):
         profiles = get_profiles()
@@ -1216,7 +1256,7 @@ class APRSManagerGUI:
         info_lbl = tk.Label(log_win, text="Real-time console updates (last 100 entries).", font=("Helvetica", 9), fg=self.c_text_muted, bg=self.c_bg)
         info_lbl.pack(pady=(0, 10))
         
-        txt_area = tk.Text(log_win, bg="#0d0f18", fg=self.c_green, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
+        txt_area = tk.Text(log_win, bg="#ffffff", fg=self.c_text_main, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
                            bd=0, highlightthickness=1, highlightbackground=self.c_border)
         txt_area.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
@@ -1323,19 +1363,37 @@ class APRSManagerGUI:
         thurs_frame = tk.Frame(fields_frame, bg=self.c_card, padx=12, pady=10, highlightthickness=1, highlightbackground=self.c_border)
         thurs_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=15)
         
+        # Row 1 of thurs_frame: Checkbutton and Time
+        thurs_row1 = tk.Frame(thurs_frame, bg=self.c_card)
+        thurs_row1.pack(fill="x")
+        
         thursday_var = tk.BooleanVar(value=False)
-        thursday_cb = tk.Checkbutton(thurs_frame, text="Join APRS Thursday Event (ANSRVR)", variable=thursday_var, 
+        thursday_cb = tk.Checkbutton(thurs_row1, text="Join APRS Thursday Event (ANSRVR)", variable=thursday_var, 
                                      font=("Helvetica", 9, "bold"), fg=self.c_text_main, bg=self.c_card, activebackground=self.c_card, 
                                      activeforeground=self.c_text_main, selectcolor=self.c_bg)
         thursday_cb.pack(side="left")
         
-        time_ent = tk.Entry(thurs_frame, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
+        time_ent = tk.Entry(thurs_row1, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
                             bd=0, highlightthickness=1, highlightbackground=self.c_border, width=6, font=("Helvetica", 10))
         time_ent.pack(side="right", padx=(5, 0))
         time_ent.insert(0, "20:00")
         
-        time_lbl = tk.Label(thurs_frame, text="Time (HH:MM):", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card)
+        time_lbl = tk.Label(thurs_row1, text="Time (HH:MM):", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card)
         time_lbl.pack(side="right")
+        
+        # Row 2 of thurs_frame: Custom Message
+        thurs_row2 = tk.Frame(thurs_frame, bg=self.c_card)
+        thurs_row2.pack(fill="x", pady=(8, 0))
+        
+        msg_lbl = tk.Label(thurs_row2, text="Thursday Message:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card)
+        msg_lbl.pack(side="left")
+        
+        thurs_msg_ent = tk.Entry(thurs_row2, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
+                                 bd=0, highlightthickness=1, highlightbackground=self.c_border, font=("Helvetica", 10))
+        thurs_msg_ent.pack(side="left", fill="x", expand=True, padx=(10, 0))
+        thurs_msg_ent.insert(0, "CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY")
+        thurs_msg_ent.bind("<FocusIn>", lambda e: thurs_msg_ent.configure(highlightbackground=self.c_accent_cyan))
+        thurs_msg_ent.bind("<FocusOut>", lambda e: thurs_msg_ent.configure(highlightbackground=self.c_border))
         
         # Populate Default / Edit values
         if edit_profile_name:
@@ -1353,10 +1411,14 @@ class APRSManagerGUI:
             thursday_var.set(data.get('aprs_thursday', False))
             time_ent.delete(0, tk.END)
             time_ent.insert(0, data.get('aprs_thursday_time', '20:00'))
+            thurs_msg_ent.delete(0, tk.END)
+            thurs_msg_ent.insert(0, data.get('aprs_thursday_msg', 'CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY'))
         else:
             entries['comment'].insert(0, "APRS Background Beacon")
             entries['symbol'].insert(0, "X")
             entries['interval'].insert(0, "5")
+            thurs_msg_ent.delete(0, tk.END)
+            thurs_msg_ent.insert(0, "CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY")
         
         def save_new():
             name = edit_profile_name if edit_profile_name else entries['name'].get().strip().lower()
@@ -1368,6 +1430,7 @@ class APRSManagerGUI:
             symbol = entries['symbol'].get().strip()
             interval_in = entries['interval'].get().strip()
             aprs_thursday_time = time_ent.get().strip() or "20:00"
+            aprs_thursday_msg = thurs_msg_ent.get().strip() or "CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY"
             
             if not name or not callsign or not lat_in or not lon_in:
                 messagebox.showerror("Error", "All configuration parameters (Name, Callsign, Coordinates) are required.", parent=form)
@@ -1408,6 +1471,7 @@ class APRSManagerGUI:
                 "interval_minutes": interval,
                 "aprs_thursday": thursday_var.get(),
                 "aprs_thursday_time": aprs_thursday_time,
+                "aprs_thursday_msg": aprs_thursday_msg,
                 "server": "rotate.aprs2.net",
                 "port": 14580
             }

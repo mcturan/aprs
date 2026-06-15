@@ -155,12 +155,16 @@ def send_aprs_thursday_sequence(config, today_str):
     callsign = config['callsign'].upper()
     log_message("[APRS Thursday] Starting. Subscribing to ANSRVR group...")
     
+    thursday_msg = config.get('aprs_thursday_msg', 'CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY').strip()
+    if not thursday_msg:
+        thursday_msg = 'CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY'
+        
     # Message packet format: SENDER>APRS,TCPIP*::RECIPIENT:MESSAGE
-    msg_packet1 = f"{callsign}>APRS,TCPIP*::ANSRVR   :CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY"
+    msg_packet1 = f"{callsign}>APRS,TCPIP*::ANSRVR   :{thursday_msg}"
     
     success = send_aprs_raw_packet(config, msg_packet1)
     if success:
-        log_message("[APRS Thursday] Join message sent: CQ HOTG 73 FROM TURKIYE #APRSTHURSDAY")
+        log_message(f"[APRS Thursday] Join message sent: {thursday_msg}")
         log_message("[APRS Thursday] Waiting 5 minutes (300 seconds)...")
         time.sleep(300)
         
