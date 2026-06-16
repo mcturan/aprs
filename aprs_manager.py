@@ -223,6 +223,73 @@ def remove_profile_service(profile_name):
     elif IS_LINUX:
         subprocess.run(['systemctl', '--user', 'disable', f'aprs-beacon@{profile_name}.service'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+def parse_aprs_coordinates(packet_str):
+    import re
+    match = re.search(r'=(\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])', packet_str)
+    if not match:
+        match = re.search(r'@\d{6}[hiz](\d{2})(\d{2}\.\d{2})([NS])(.)(\d{3})(\d{2}\.\d{2})([EW])', packet_str)
+    if not match:
+        match = re.search(r'(\d{2})(\d{2}\.\d{2})([NS])[\\/](\d{3})(\d{2}\.\d{2})([EW])', packet_str)
+        
+    if match:
+        try:
+            groups = match.groups()
+            if len(groups) == 6:
+                lat_deg, lat_min, lat_dir, lon_deg, lon_min, lon_dir = groups
+            elif len(groups) == 7:
+                lat_deg, lat_min, lat_dir, _, lon_deg, lon_min, lon_dir = groups
+            else:
+                return None
+                
+            lat = float(lat_deg) + float(lat_min) / 60.0
+            if lat_dir == 'S':
+                lat = -lat
+                
+            lon = float(lon_deg) + float(lon_min) / 60.0
+            if lon_dir == 'W':
+                lon = -lon
+                
+            return lat, lon
+        except:
+            pass
+    return None
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    import math
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+def get_callsign_coordinates(callsign):
+    import urllib.request
+    import re
+    url = f"http://www.findu.com/cgi-bin/find.cgi?call={callsign.upper()}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+            match = re.search(r'(\d{2})(\d{2}\.\d{2})([NS])[\\/](\d{3})(\d{2}\.\d{2})([EW])', html)
+            if match:
+                groups = match.groups()
+                lat_deg, lat_min, lat_dir, lon_deg, lon_min, lon_dir = groups
+                
+                lat = float(lat_deg) + float(lat_min) / 60.0
+                if lat_dir == 'S':
+                    lat = -lat
+                    
+                lon = float(lon_deg) + float(lon_min) / 60.0
+                if lon_dir == 'W':
+                    lon = -lon
+                    
+                return lat, lon
+    except:
+        pass
+    return None
+
 def get_remote_version():
     import urllib.request
     import re
@@ -1235,12 +1302,33 @@ class APRSManagerGUI:
         map_ctrl = tk.Frame(self.tab_map, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border, padx=15, pady=10)
         map_ctrl.pack(fill="x", side="top", pady=(0, 10))
         
-        tk.Label(map_ctrl, text="Select Station Profile:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).pack(side="left", padx=(0, 10))
+        # Profile selector
+        tk.Label(map_ctrl, text="Profile:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).pack(side="left")
         
         self.map_profile_var = tk.StringVar()
         self.map_profile_menu = ttk.OptionMenu(map_ctrl, self.map_profile_var, "", command=self.on_map_profile_change)
-        self.map_profile_menu.pack(side="left", padx=5)
-        self.map_profile_menu.configure(width=15)
+        self.map_profile_menu.pack(side="left", padx=(5, 15))
+        self.map_profile_menu.configure(width=10)
+        
+        # Callsign search
+        tk.Label(map_ctrl, text="Search Callsign:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).pack(side="left")
+        
+        self.map_search_entry = tk.Entry(map_ctrl, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main,
+                                         bd=0, highlightthickness=1, highlightbackground=self.c_border, font=("Helvetica", 9), width=10)
+        self.map_search_entry.pack(side="left", padx=5)
+        
+        def ent_focus_in(e): self.map_search_entry.configure(highlightbackground=self.c_accent_cyan)
+        def ent_focus_out(e): self.map_search_entry.configure(highlightbackground=self.c_border)
+        self.map_search_entry.bind("<FocusIn>", ent_focus_in)
+        self.map_search_entry.bind("<FocusOut>", ent_focus_out)
+        self.map_search_entry.bind("<Return>", lambda e: self.search_callsign_action())
+        
+        self.map_search_btn = tk.Button(map_ctrl, text="Search", bg=self.c_green, fg="#ffffff", activeforeground="#ffffff",
+                                        relief="flat", bd=0, highlightthickness=0, font=("Helvetica", 8, "bold"), padx=10, pady=4,
+                                        command=self.search_callsign_action)
+        self.map_search_btn.pack(side="left", padx=5)
+        self.map_search_btn.bind("<Enter>", lambda e: self.map_search_btn.configure(bg="#059669"))
+        self.map_search_btn.bind("<Leave>", lambda e: self.map_search_btn.configure(bg=self.c_green))
         
         # Open in Browser button
         self.map_browser_btn = tk.Button(map_ctrl, text="Open aprs.fi Map ↗", bg=self.c_accent_cyan, fg="#ffffff", activeforeground="#ffffff",
@@ -1338,7 +1426,7 @@ class APRSManagerGUI:
         self.map_img_lbl.configure(image="", text="Loading map from APRS data...")
         
         def loader():
-            img_data = self.load_static_map_data(lat, lon)
+            img_data = self.load_static_map_data_from_coords(lat, lon)
             if img_data:
                 self.root.after(0, lambda: self.display_map_image(img_data))
             else:
@@ -1346,16 +1434,61 @@ class APRSManagerGUI:
                 
         threading.Thread(target=loader, daemon=True).start()
 
-    def load_static_map_data(self, lat, lon):
+    def search_callsign_action(self):
+        callsign = self.map_search_entry.get().strip().upper()
+        if not callsign:
+            return
+            
+        self.map_img_lbl.configure(image="", text=f"Searching for {callsign} on APRS network...")
+        
+        def finder():
+            coords = get_callsign_coordinates(callsign)
+            if coords:
+                lat, lon = coords
+                self.root.after(0, lambda: self.update_map_view_custom(callsign, lat, lon))
+            else:
+                self.root.after(0, lambda: self.map_img_lbl.configure(image="", text=f"Could not locate callsign '{callsign}'.\nCheck suffix or try again later."))
+                
+        threading.Thread(target=finder, daemon=True).start()
+
+    def update_map_view_custom(self, target_name, lat, lon):
+        self.map_img_lbl.configure(image="", text=f"Loading map for {target_name}...")
+        
+        def loader():
+            img_data = self.load_static_map_data_from_coords(lat, lon)
+            if img_data:
+                self.root.after(0, lambda: self.display_map_image(img_data))
+            else:
+                self.root.after(0, lambda: self.map_img_lbl.configure(image="", text="Failed to download map preview.\nCheck internet connection or click 'Open aprs.fi Map' above."))
+                
+        threading.Thread(target=loader, daemon=True).start()
+
+    def load_static_map_data_from_coords(self, lat, lon):
         import urllib.request
         import base64
         from io import BytesIO
         
-        url = f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&z=13&l=map&size=650,380&pt={lon},{lat},pm2rdm"
+        # Build OSM Static Map URL (openstreetmap.de)
+        url = f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}&zoom=12&size=720x420&maptype=mapnik&markers={lat},{lon},ol-marker"
+        
+        # Find nearby stations within 50km
+        nearby_to_plot = []
+        for p_name, stations_dict in getattr(self, 'nearby_stations', {}).items():
+            for csign, (s_lat, s_lon, _) in list(stations_dict.items()):
+                dist = calculate_distance(lat, lon, s_lat, s_lon)
+                # Avoid plotting the center coordinates as a nearby station
+                if dist <= 50.0 and (abs(s_lat - lat) > 0.0001 or abs(s_lon - lon) > 0.0001):
+                    if not any(x[0] == csign for x in nearby_to_plot):
+                        nearby_to_plot.append((csign, s_lat, s_lon))
+                        
+        # Plot up to 15 nearby stations
+        for csign, s_lat, s_lon in nearby_to_plot[:15]:
+            url += f"|{s_lat},{s_lon},lightblue-pushpin"
+            
         headers = {'User-Agent': 'Mozilla/5.0'}
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 img_data = response.read()
             
             img = Image.open(BytesIO(img_data))
@@ -1363,7 +1496,7 @@ class APRSManagerGUI:
             img.save(out_bytes, format="PNG")
             return base64.b64encode(out_bytes.getvalue())
         except Exception as e:
-            print(f"Map download error: {e}")
+            print(f"OSM static map download error: {e}")
             return None
 
     def display_map_image(self, img_data):
@@ -1374,6 +1507,11 @@ class APRSManagerGUI:
             self.map_img_lbl.configure(image="", text=f"Error rendering map: {e}")
 
     def open_current_map_in_browser(self):
+        searched = self.map_search_entry.get().strip()
+        if searched:
+            webbrowser.open(f"https://aprs.fi/#!call=a%2F{searched.upper()}")
+            return
+            
         profile_name = self.map_profile_var.get()
         if not profile_name:
             webbrowser.open("https://aprs.fi")
@@ -2141,7 +2279,20 @@ class APRSManagerGUI:
             
         try:
             sock.recv(1024)
-            login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
+            
+            # Construct Range filter to receive position packets of surrounding stations
+            filter_str = f"b/{callsign}"
+            try:
+                profiles = get_profiles()
+                p_data = profiles.get(profile_name, {})
+                lat = p_data.get('latitude')
+                lon = p_data.get('longitude')
+                if lat is not None and lon is not None:
+                    filter_str += f" r/{lat}/{lon}/50"
+            except:
+                pass
+                
+            login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter {filter_str}\r\n"
             sock.sendall(login_str.encode('utf-8'))
             sock.recv(1024)
             
@@ -2157,6 +2308,26 @@ class APRSManagerGUI:
                     line = line.strip()
                     if not line:
                         continue
+                    
+                    # Parse coordinates from packet to gather surrounding stations
+                    try:
+                        coords = parse_aprs_coordinates(line)
+                        if coords and ">" in line:
+                            lat_c, lon_c = coords
+                            p_sender = line.split(">", 1)[0].strip()
+                            if p_sender.upper() != callsign.upper():
+                                if not hasattr(self, 'nearby_stations'):
+                                    self.nearby_stations = {}
+                                stations = self.nearby_stations.setdefault(profile_name, {})
+                                stations[p_sender.upper()] = (lat_c, lon_c, time.time())
+                                
+                                # Prune stations older than 15 mins
+                                now = time.time()
+                                self.nearby_stations[profile_name] = {
+                                    k: v for k, v in stations.items() if now - v[2] < 900
+                                }
+                    except:
+                        pass
                     
                     if "::" in line:
                         try:
