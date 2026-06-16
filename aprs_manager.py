@@ -883,6 +883,9 @@ class APRSManagerGUI:
         self.ping_thread = threading.Thread(target=self.gateway_ping_loop, daemon=True)
         self.ping_thread.start()
         
+        # Start log updater loop
+        self.root.after(100, self.update_card_logs_loop)
+        
         self.check_daily_update()
 
     def check_daily_update(self):
@@ -1116,6 +1119,9 @@ class APRSManagerGUI:
                     
                     # Update autostart checkbox
                     card_data['autostart_var'].set(is_service_enabled(name))
+                    
+        # Update logs on all cards immediately
+        self.update_logs_display()
 
     def create_profile_card(self, name, data, idx):
         running = is_profile_running(name)
@@ -1198,7 +1204,7 @@ class APRSManagerGUI:
         
         # Actions block (right align)
         actions_block = tk.Frame(row2, bg=self.c_card)
-        actions_block.pack(side="right", fill="y")
+        actions_block.pack(side="right", fill="y", anchor="center")
         
         toggle_txt = "STOP" if running else "START"
         toggle_color = self.c_red if running else self.c_green
@@ -1214,26 +1220,33 @@ class APRSManagerGUI:
         toggle_btn.pack(side="left", padx=2)
         style_action_btn(toggle_btn, toggle_color, toggle_hover, text_fg="#ffffff")
         
-        log_btn = tk.Button(actions_block, text="Logs", bg=self.c_btn_gray, command=lambda n=name: self.open_log_viewer(n))
-        log_btn.pack(side="left", padx=2)
-        style_action_btn(log_btn, self.c_btn_gray, "#475569")
+        # Create Dropdown Menu for this profile card
+        card_menu = tk.Menu(self.root, tearoff=0, bg=self.c_card, fg=self.c_text_main, activebackground=self.c_accent_cyan, activeforeground="#ffffff", font=("Helvetica", 9))
+        card_menu.add_command(label="Details & Logs", command=lambda n=name: self.open_log_viewer(n))
+        card_menu.add_command(label="APRS Chat", command=lambda n=name: self.open_chat_window(n))
+        card_menu.add_command(label="View Map", command=lambda c=data.get('callsign'): self.open_map_link(c))
+        card_menu.add_separator()
+        card_menu.add_command(label="Edit Settings", command=lambda n=name: self.open_add_profile_dialog(n))
+        card_menu.add_command(label="Delete Profile", command=lambda n=name: self.delete_profile(n))
         
-        # APRS Messenger button
-        chat_btn = tk.Button(actions_block, text="Chat", bg="#8b5cf6", command=lambda n=name: self.open_chat_window(n))
-        chat_btn.pack(side="left", padx=2)
-        style_action_btn(chat_btn, "#8b5cf6", "#7c3aed")
+        # Dropdown click handler
+        def show_card_menu():
+            x = menu_btn.winfo_rootx()
+            y = menu_btn.winfo_rooty() + menu_btn.winfo_height()
+            card_menu.post(x, y)
+            
+        # Menu / Actions Button
+        menu_btn = tk.Button(actions_block, text="Actions ▾", bg=self.c_btn_gray, command=show_card_menu)
+        menu_btn.pack(side="left", padx=2)
+        style_action_btn(menu_btn, self.c_btn_gray, "#cbd5e1", "#334155")
         
-        map_btn = tk.Button(actions_block, text="Map", bg="#1e3a8a", command=lambda c=data.get('callsign'): self.open_map_link(c))
-        map_btn.pack(side="left", padx=2)
-        style_action_btn(map_btn, "#1e3a8a", "#1d4ed8")
+        # --- Row 3: Integrated Real-Time Log Window ---
+        log_frame = tk.Frame(content_frame, bg="#0f172a", bd=1, highlightthickness=0)
+        log_frame.pack(fill="x", pady=(10, 0))
         
-        edit_btn = tk.Button(actions_block, text="Edit", bg="#4f46e5", command=lambda n=name: self.open_add_profile_dialog(n))
-        edit_btn.pack(side="left", padx=2)
-        style_action_btn(edit_btn, "#4f46e5", "#4338ca")
-        
-        del_btn = tk.Button(actions_block, text="Delete", bg="#7c2d12", command=lambda n=name: self.delete_profile(n))
-        del_btn.pack(side="left", padx=2)
-        style_action_btn(del_btn, "#7c2d12", "#9a3412")
+        log_text = tk.Text(log_frame, height=5, bg="#0f172a", fg="#38bdf8", font=("Consolas", 8), wrap="word", relief="flat", bd=0)
+        log_text.pack(fill="x", expand=True, padx=8, pady=5)
+        log_text.configure(state="disabled")
         
         # Save references for dynamic updating
         self.profile_cards[name] = {
@@ -1244,7 +1257,8 @@ class APRSManagerGUI:
             'location_val_lbl': location_val_lbl,
             'toggle_btn': toggle_btn,
             'packets_lbl': packets_lbl,
-            'autostart_var': autostart_var
+            'autostart_var': autostart_var,
+            'log_text': log_text
         }
 
     def toggle_profile(self, name, currently_running):
@@ -1612,6 +1626,39 @@ class APRSManagerGUI:
                     self.root.after(0, lambda: self.refresh_profiles(force_rebuild=False))
                 except:
                     pass
+
+    def update_logs_display(self):
+        try:
+            for name, card_data in list(self.profile_cards.items()):
+                log_text_widget = card_data.get('log_text')
+                if log_text_widget and log_text_widget.winfo_exists():
+                    log_file = os.path.join(LOGS_DIR, f"{name}.log")
+                    if os.path.exists(log_file):
+                        try:
+                            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                lines = f.readlines()
+                                last_lines = "".join(lines[-5:]).strip()
+                            
+                            log_text_widget.configure(state="normal")
+                            log_text_widget.delete("1.0", tk.END)
+                            log_text_widget.insert(tk.END, last_lines)
+                            log_text_widget.see(tk.END)
+                            log_text_widget.configure(state="disabled")
+                        except:
+                            pass
+                    else:
+                        log_text_widget.configure(state="normal")
+                        log_text_widget.delete("1.0", tk.END)
+                        log_text_widget.insert(tk.END, "No logs yet. Start the beacon to generate logs...")
+                        log_text_widget.configure(state="disabled")
+        except:
+            pass
+
+    def update_card_logs_loop(self):
+        if not self.running:
+            return
+        self.update_logs_display()
+        self.root.after(3000, self.update_card_logs_loop)
 
     def gateway_ping_loop(self):
         while self.running:
