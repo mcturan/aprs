@@ -290,6 +290,67 @@ def get_callsign_coordinates(callsign):
         pass
     return None
 
+def latlon_to_pixel(lat_n, lon_n, center_lat, center_lon, zoom, width=720, height=420):
+    import math
+    lat_rad = math.radians(center_lat)
+    n = 2.0 ** zoom
+    cx = (center_lon + 180.0) / 360.0 * n
+    cy = (1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n
+    
+    lat_n_rad = math.radians(lat_n)
+    nx = (lon_n + 180.0) / 360.0 * n
+    ny = (1.0 - math.log(math.tan(lat_n_rad) + (1.0 / math.cos(lat_n_rad))) / math.pi) / 2.0 * n
+    
+    x_pixel = int((nx - cx) * 256 + width / 2)
+    y_pixel = int((ny - cy) * 256 + height / 2)
+    return x_pixel, y_pixel
+
+def stitch_osm_map(lat, lon, zoom, width=720, height=420):
+    import urllib.request
+    import math
+    from io import BytesIO
+    from PIL import Image
+    
+    lat_rad = math.radians(lat)
+    n = 2.0 ** zoom
+    cx = (lon + 180.0) / 360.0 * n
+    cy = (1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n
+    
+    tx_start = int(cx) - 1
+    ty_start = int(cy) - 1
+    
+    canvas = Image.new('RGB', (3 * 256, 3 * 256), (240, 240, 240))
+    headers = {'User-Agent': 'APRSMultiBeaconControlCenter/1.3.0 (turan@mcturan.org)'}
+    
+    for i in range(3):
+        for j in range(3):
+            tx = tx_start + i
+            ty = ty_start + j
+            max_tile = int(n) - 1
+            if tx < 0 or tx > max_tile or ty < 0 or ty > max_tile:
+                continue
+                
+            tile_url = f"https://tile.openstreetmap.org/{zoom}/{tx}/{ty}.png"
+            try:
+                req = urllib.request.Request(tile_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    tile_data = r.read()
+                tile_img = Image.open(BytesIO(tile_data))
+                canvas.paste(tile_img, (i * 256, j * 256))
+            except Exception as e:
+                print(f"Failed to download tile {zoom}/{tx}/{ty}: {e}")
+                
+    center_x = (cx - tx_start) * 256
+    center_y = (cy - ty_start) * 256
+    
+    crop_left = int(center_x - width / 2)
+    crop_top = int(center_y - height / 2)
+    crop_right = crop_left + width
+    crop_bottom = crop_top + height
+    
+    cropped_img = canvas.crop((crop_left, crop_top, crop_right, crop_bottom))
+    return cropped_img, crop_left, crop_top, tx_start, ty_start
+
 def get_remote_version():
     import urllib.request
     import re
@@ -1464,39 +1525,47 @@ class APRSManagerGUI:
         threading.Thread(target=loader, daemon=True).start()
 
     def load_static_map_data_from_coords(self, lat, lon):
-        import urllib.request
         import base64
         from io import BytesIO
+        from PIL import Image, ImageDraw
         
-        # Build OSM Static Map URL (openstreetmap.de)
-        url = f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}&zoom=12&size=720x420&maptype=mapnik&markers={lat},{lon},ol-marker"
+        zoom = 12
+        width = 720
+        height = 420
         
-        # Find nearby stations within 50km
-        nearby_to_plot = []
-        for p_name, stations_dict in getattr(self, 'nearby_stations', {}).items():
-            for csign, (s_lat, s_lon, _) in list(stations_dict.items()):
-                dist = calculate_distance(lat, lon, s_lat, s_lon)
-                # Avoid plotting the center coordinates as a nearby station
-                if dist <= 50.0 and (abs(s_lat - lat) > 0.0001 or abs(s_lon - lon) > 0.0001):
-                    if not any(x[0] == csign for x in nearby_to_plot):
-                        nearby_to_plot.append((csign, s_lat, s_lon))
-                        
-        # Plot up to 15 nearby stations
-        for csign, s_lat, s_lon in nearby_to_plot[:15]:
-            url += f"|{s_lat},{s_lon},lightblue-pushpin"
-            
-        headers = {'User-Agent': 'Mozilla/5.0'}
         try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as response:
-                img_data = response.read()
+            # Stitch map tiles locally using our OSM stitching helper
+            img, _, _, _, _ = stitch_osm_map(lat, lon, zoom, width, height)
+            draw = ImageDraw.Draw(img)
             
-            img = Image.open(BytesIO(img_data))
+            # Find and plot nearby stations within 50km
+            nearby_to_plot = []
+            for p_name, stations_dict in getattr(self, 'nearby_stations', {}).items():
+                for csign, (s_lat, s_lon, _) in list(stations_dict.items()):
+                    dist = calculate_distance(lat, lon, s_lat, s_lon)
+                    # Filter for stations within 50km that are not our center point
+                    if dist <= 50.0 and (abs(s_lat - lat) > 0.0001 or abs(s_lon - lon) > 0.0001):
+                        if not any(x[0] == csign for x in nearby_to_plot):
+                            nearby_to_plot.append((csign, s_lat, s_lon))
+                            
+            # Draw surrounding stations (blue markers + labels)
+            for csign, s_lat, s_lon in nearby_to_plot[:25]:
+                px, py = latlon_to_pixel(s_lat, s_lon, lat, lon, zoom, width, height)
+                if 10 <= px <= width - 10 and 10 <= py <= height - 10:
+                    draw.ellipse([px-6, py-6, px+6, py+6], fill=(37, 99, 235, 255), outline=(255, 255, 255, 255), width=2)
+                    draw.text((px+8, py-6), csign, fill=(15, 23, 42, 255))
+                    
+            # Draw center focused station (red marker + HERE label)
+            cx, cy = latlon_to_pixel(lat, lon, lat, lon, zoom, width, height)
+            draw.ellipse([cx-10, cy-10, cx+10, cy+10], fill=(244, 63, 94, 255), outline=(255, 255, 255, 255), width=3)
+            draw.text((cx+12, cy-8), "HERE", fill=(244, 63, 94, 255))
+            
+            # Convert to base64 PNG data
             out_bytes = BytesIO()
             img.save(out_bytes, format="PNG")
             return base64.b64encode(out_bytes.getvalue())
         except Exception as e:
-            print(f"OSM static map download error: {e}")
+            print(f"Local OSM static map rendering error: {e}")
             return None
 
     def display_map_image(self, img_data):
