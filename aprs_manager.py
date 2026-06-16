@@ -753,367 +753,6 @@ def cli_edit():
         start_profile_service(name)
         print("[+] Profile restarted successfully.")
 
-# APRS-IS Messenger Window Class
-class APRSChatWindow(tk.Toplevel):
-    def __init__(self, parent, default_profile_name=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.title("APRS Messenger")
-        self.geometry("780x540")
-        self.configure(bg="#090a0f")
-        self.resizable(False, False)
-        
-        self.transient(parent)
-        self.grab_set()
-        
-        self.c_bg = "#f1f5f9"
-        self.c_card = "#ffffff"
-        self.c_border = "#cbd5e1"
-        self.c_text_main = "#0f172a"
-        self.c_text_muted = "#475569"
-        self.c_accent = "#2563eb"
-        self.c_green = "#047857"
-        self.c_red = "#b91c1c"
-        
-        self.profiles = get_profiles()
-        if not self.profiles:
-            messagebox.showerror("Error", "You must configure at least one profile to use APRS Chat.")
-            self.destroy()
-            return
-            
-        self.active_profile = default_profile_name or list(self.profiles.keys())[0]
-        self.parent.active_chat_ui = self
-        
-        if not hasattr(self.parent, 'unread_chats'):
-            self.parent.unread_chats = {}
-        self.unread_peers = self.parent.unread_chats.setdefault(self.active_profile, set())
-        
-        self.build_ui()
-        
-        # Determine the initial peer (newest file or SMSGTE)
-        initial_peer = "SMSGTE"
-        chats_dir = os.path.join(BASE_DIR, 'chats', self.active_profile)
-        if os.path.exists(chats_dir):
-            try:
-                files = []
-                for f in os.listdir(chats_dir):
-                    if f.endswith('.json'):
-                        fp = os.path.join(chats_dir, f)
-                        files.append((f, os.path.getmtime(fp)))
-                if files:
-                    files.sort(key=lambda x: x[1], reverse=True)
-                    initial_peer = files[0][0][:-5].upper()
-            except:
-                pass
-                
-        self.to_entry.insert(0, initial_peer)
-        
-        # Ensure chat listener is running for this profile
-        if self.active_profile not in self.parent.chat_listeners:
-            self.parent.start_bg_chat_listener(self.active_profile)
-            
-        self.load_history_for_peer()
-        self.refresh_conversations_list()
-        self.parent.refresh_profiles()
-        
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
-        
-    def build_ui(self):
-        # Header / Profile Info Frame
-        top_frame = tk.Frame(self, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border, padx=15, pady=12)
-        top_frame.pack(fill="x", side="top")
-        
-        # Dropdown grid
-        tk.Label(top_frame, text="From Profile:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).grid(row=0, column=0, sticky="w", pady=5)
-        
-        profile_names = list(self.profiles.keys())
-        self.profile_var = tk.StringVar(value=self.active_profile)
-        
-        # Option menu
-        self.profile_menu = ttk.OptionMenu(
-            top_frame, self.profile_var, self.active_profile, *profile_names, command=self.on_profile_change
-        )
-        self.profile_menu.grid(row=0, column=1, sticky="w", padx=10, pady=5)
-        self.profile_menu.configure(width=12)
-        
-        tk.Label(top_frame, text="To Callsign (Manual):", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).grid(row=0, column=2, sticky="w", padx=(25, 0), pady=5)
-        
-        self.to_entry = tk.Entry(top_frame, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
-                                 bd=0, highlightthickness=1, highlightbackground=self.c_border, font=("Helvetica", 10), width=12)
-        self.to_entry.grid(row=0, column=3, sticky="w", padx=10, pady=5)
-        
-        def to_focus_in(e): self.to_entry.configure(highlightbackground=self.c_accent)
-        def to_focus_out(e): 
-            self.to_entry.configure(highlightbackground=self.c_border)
-            self.load_history_for_peer()
-        self.to_entry.bind("<FocusIn>", to_focus_in)
-        self.to_entry.bind("<FocusOut>", to_focus_out)
-        self.to_entry.bind("<Return>", lambda e: self.load_history_for_peer())
-        
-        # Main Split Frame
-        main_split = tk.Frame(self, bg=self.c_bg)
-        main_split.pack(fill="both", expand=True)
-        
-        # 1. Left Sidebar Frame (Conversations List)
-        sidebar_frame = tk.Frame(main_split, bg=self.c_bg)
-        sidebar_frame.pack(side="left", fill="y", padx=(20, 10), pady=15)
-        
-        tk.Label(sidebar_frame, text="CHATS", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_bg).pack(anchor="w", pady=(0, 5))
-        
-        list_container = tk.Frame(sidebar_frame, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border)
-        list_container.pack(fill="both", expand=True)
-        
-        self.conversations_listbox = tk.Listbox(list_container, bg="#ffffff", fg=self.c_text_main, font=("Helvetica", 10, "bold"), 
-                                                selectbackground=self.c_accent, selectforeground="#ffffff", activestyle="none",
-                                                bd=0, highlightthickness=0, width=22)
-        self.conversations_listbox.pack(side="left", fill="both", expand=True, padx=2, pady=2)
-        
-        list_scroll = ttk.Scrollbar(list_container, orient="vertical", command=self.conversations_listbox.yview)
-        list_scroll.pack(side="right", fill="y")
-        self.conversations_listbox.configure(yscrollcommand=list_scroll.set)
-        
-        # Bind Listbox selection
-        self.conversations_listbox.bind("<<ListboxSelect>>", self.on_conversation_select)
-        
-        # 2. Right Chat Panel
-        chat_frame = tk.Frame(main_split, bg=self.c_bg)
-        chat_frame.pack(side="right", fill="both", expand=True, padx=(10, 20), pady=15)
-        
-        self.chat_area = tk.Text(chat_frame, bg="#ffffff", fg=self.c_text_main, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
-                                 bd=0, highlightthickness=1, highlightbackground=self.c_border)
-        self.chat_area.pack(side="top", fill="both", expand=True)
-        
-        scrollbar = ttk.Scrollbar(self.chat_area, orient="vertical", command=self.chat_area.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.chat_area.configure(yscrollcommand=scrollbar.set)
-        
-        self.chat_area.tag_config("system", foreground=self.c_text_muted, font=("Helvetica", 9, "italic"))
-        self.chat_area.tag_config("sent", foreground=self.c_green, font=("Helvetica", 9, "bold"))
-        self.chat_area.tag_config("received", foreground=self.c_accent, font=("Helvetica", 9, "bold"))
-        
-        # Bottom Input Frame inside Chat Frame
-        input_frame = tk.Frame(chat_frame, bg=self.c_bg, pady=10)
-        input_frame.pack(fill="x", side="bottom")
-        
-        input_border = tk.Frame(input_frame, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border)
-        input_border.pack(fill="x", expand=True)
-        
-        self.msg_entry = tk.Entry(input_border, bg=self.c_card, fg=self.c_text_main, insertbackground=self.c_text_main, 
-                                  bd=0, highlightthickness=0, font=("Helvetica", 10))
-        self.msg_entry.pack(side="left", fill="x", expand=True, ipady=8, padx=10)
-        
-        self.char_lbl = tk.Label(input_border, text="0/67", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_card)
-        self.char_lbl.pack(side="left", padx=10)
-        
-        def validate_msg(event):
-            val = self.msg_entry.get()
-            if len(val) > 67:
-                self.msg_entry.delete(67, tk.END)
-            self.char_lbl.configure(text=f"{min(len(val), 67)}/67")
-        self.msg_entry.bind("<KeyRelease>", validate_msg)
-        self.msg_entry.bind("<Return>", lambda e: self.send_message_action())
-        
-        self.send_btn = tk.Button(input_border, text="Send", bg=self.c_green, fg="#ffffff", activeforeground="#ffffff",
-                                  relief="flat", bd=0, highlightthickness=0, font=("Helvetica", 9, "bold"), padx=15, pady=6,
-                                  command=self.send_message_action)
-        self.send_btn.pack(side="right", padx=2, pady=2)
-        self.send_btn.bind("<Enter>", lambda e: self.send_btn.configure(bg="#059669"))
-        self.send_btn.bind("<Leave>", lambda e: self.send_btn.configure(bg=self.c_green))
-
-    def on_profile_change(self, profile_name):
-        prev_profile = self.active_profile
-        self.active_profile = profile_name
-        
-        # Stop background listener of previous profile ONLY IF it's not actually running in background
-        if not is_profile_running(prev_profile) and prev_profile in self.parent.chat_listeners:
-            self.parent.stop_bg_chat_listener(prev_profile)
-            
-        # Start new background listener if it isn't running
-        if self.active_profile not in self.parent.chat_listeners:
-            self.parent.start_bg_chat_listener(self.active_profile)
-            
-        # Update unread list
-        self.unread_peers = self.parent.unread_chats.setdefault(self.active_profile, set())
-        
-        # Load initial peer for new profile
-        initial_peer = "SMSGTE"
-        chats_dir = os.path.join(BASE_DIR, 'chats', self.active_profile)
-        if os.path.exists(chats_dir):
-            try:
-                files = []
-                for f in os.listdir(chats_dir):
-                    if f.endswith('.json'):
-                        fp = os.path.join(chats_dir, f)
-                        files.append((f, os.path.getmtime(fp)))
-                if files:
-                    files.sort(key=lambda x: x[1], reverse=True)
-                    initial_peer = files[0][0][:-5].upper()
-            except:
-                pass
-                
-        self.to_entry.delete(0, tk.END)
-        self.to_entry.insert(0, initial_peer)
-        
-        self.load_history_for_peer()
-        self.refresh_conversations_list()
-        self.parent.refresh_profiles()
-        
-    def refresh_conversations_list(self):
-        selected_peer = self.to_entry.get().strip().upper()
-            
-        self.conversations_listbox.delete(0, tk.END)
-        
-        chats_dir = os.path.join(BASE_DIR, 'chats', self.active_profile)
-        if os.path.exists(chats_dir):
-            try:
-                files = []
-                for f in os.listdir(chats_dir):
-                    if f.endswith('.json'):
-                        fp = os.path.join(chats_dir, f)
-                        files.append((f, os.path.getmtime(fp)))
-                
-                files.sort(key=lambda x: x[1], reverse=True)
-                
-                for idx, (f, mtime) in enumerate(files):
-                    callsign = f[:-5].upper()
-                    display_name = callsign
-                    if callsign in self.unread_peers:
-                        display_name = f"● {callsign}"
-                    
-                    self.conversations_listbox.insert(tk.END, display_name)
-                    
-                    if callsign == selected_peer:
-                        self.conversations_listbox.selection_set(idx)
-            except:
-                pass
-
-    def on_conversation_select(self, event):
-        selection = self.conversations_listbox.curselection()
-        if not selection:
-            return
-        peer = self.conversations_listbox.get(selection[0])
-        
-        if peer.startswith("● "):
-            peer = peer[2:]
-            
-        if peer in self.unread_peers:
-            self.unread_peers.remove(peer)
-            
-        self.to_entry.delete(0, tk.END)
-        self.to_entry.insert(0, peer)
-        self.load_history_for_peer()
-        self.refresh_conversations_list()
-        self.parent.refresh_profiles()
-
-    def load_history_for_peer(self):
-        peer = self.to_entry.get().strip().upper()
-        if not peer:
-            return
-            
-        if peer in self.unread_peers:
-            self.unread_peers.remove(peer)
-            self.parent.refresh_profiles()
-            
-        try:
-            self.conversations_listbox.selection_clear(0, tk.END)
-            items = self.conversations_listbox.get(0, tk.END)
-            plain_items = [x[2:] if x.startswith("● ") else x for x in items]
-            if peer in plain_items:
-                idx = plain_items.index(peer)
-                self.conversations_listbox.selection_set(idx)
-                self.conversations_listbox.see(idx)
-        except:
-            pass
-            
-        self.chat_area.configure(state="normal")
-        self.chat_area.delete("1.0", tk.END)
-        self.chat_area.configure(state="disabled")
-        
-        messages = self.parent.load_chat_messages(self.active_profile, peer)
-        self.chat_area.configure(state="normal")
-        for msg in messages:
-            sender = msg.get('sender')
-            text = msg.get('text')
-            timestamp = msg.get('timestamp', '').split(' ')[-1] # get just HH:MM:SS
-            
-            if sender == "SYSTEM":
-                self.chat_area.insert(tk.END, f"[{timestamp}] SYSTEM: {text}\n", "system")
-            elif sender == "YOU":
-                self.chat_area.insert(tk.END, f"[{timestamp}] YOU: {text}\n", "sent")
-            else:
-                self.chat_area.insert(tk.END, f"[{timestamp}] <{sender}> {text}\n", "received")
-        self.chat_area.see(tk.END)
-        self.chat_area.configure(state="disabled")
-        
-    def append_incoming_message(self, sender, text):
-        peer = self.to_entry.get().strip().upper()
-        sender_upper = sender.upper()
-        
-        if sender_upper == peer:
-            self.after(0, lambda: [self.append_message(sender, text), self.refresh_conversations_list()])
-        else:
-            self.unread_peers.add(sender_upper)
-            self.after(0, lambda: [self.refresh_conversations_list(), self.parent.refresh_profiles()])
-
-    def append_message(self, sender, text):
-        if not self.winfo_exists():
-            return
-        self.chat_area.configure(state="normal")
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        if sender == "SYSTEM":
-            self.chat_area.insert(tk.END, f"[{timestamp}] SYSTEM: {text}\n", "system")
-        elif sender == "YOU":
-            self.chat_area.insert(tk.END, f"[{timestamp}] YOU: {text}\n", "sent")
-        else:
-            self.chat_area.insert(tk.END, f"[{timestamp}] <{sender}> {text}\n", "received")
-        self.chat_area.see(tk.END)
-        self.chat_area.configure(state="disabled")
-
-    def send_message_action(self):
-        to_callsign = self.to_entry.get().strip().upper()
-        msg_text = self.msg_entry.get().strip()
-        if not to_callsign or not msg_text:
-            return
-        if not self.active_profile or self.active_profile not in self.profiles:
-            return
-        data = self.profiles[self.active_profile]
-        from_callsign = data.get('callsign', '').upper()
-        
-        # Determine passcode
-        passcode = data.get('passcode')
-        if not passcode:
-            passcode = generate_aprs_passcode(from_callsign)
-            
-        self.send_btn.configure(state="disabled")
-        
-        def send_worker():
-            success, res_msg = send_aprs_message(from_callsign, passcode, to_callsign, msg_text)
-            if self.winfo_exists():
-                self.parent.after(0, lambda: self.on_send_complete(success, to_callsign, msg_text, res_msg))
-                
-        threading.Thread(target=send_worker, daemon=True).start()
-        
-    def on_send_complete(self, success, to_callsign, msg_text, res_msg):
-        self.send_btn.configure(state="normal")
-        if success:
-            self.append_message("YOU", msg_text)
-            self.msg_entry.delete(0, tk.END)
-            self.char_lbl.configure(text="0/67")
-            # Save sent message to history
-            self.parent.save_chat_message(self.active_profile, "YOU", msg_text, to_callsign)
-            self.refresh_conversations_list()
-        else:
-            messagebox.showerror("Error", res_msg, parent=self)
-            
-    def on_close(self):
-        self.parent.active_chat_ui = None
-        # Clean up chat listener if the profile isn't running in background
-        if not is_profile_running(self.active_profile) and self.active_profile in self.parent.chat_listeners:
-            self.parent.stop_bg_chat_listener(self.active_profile)
-        self.grab_release()
-        self.parent.refresh_profiles()
-        self.destroy()
-
 # GUI Mode Implementation - Modernized Obsidian Theme
 class APRSManagerGUI:
     def __init__(self, root):
@@ -1139,8 +778,9 @@ class APRSManagerGUI:
         # Dictionary of references to profile card widgets to update dynamically (flicker-free)
         self.profile_cards = {}
         self.chat_listeners = {}
-        self.active_chat_ui = None
+        self.active_chat_ui = self
         self.unread_chats = {}
+        self.to_entry = None
         
         # Initialize connection status variable
         self.server_status = "Checking connection..."
@@ -1344,6 +984,11 @@ class APRSManagerGUI:
         self.tab_map = tk.Frame(self.notebook, bg=self.c_bg)
         self.notebook.add(self.tab_map, text="  APRS.fi Map  ")
         
+        # Tab 3: APRS Chat
+        self.tab_chat = tk.Frame(self.notebook, bg=self.c_bg)
+        self.notebook.add(self.tab_chat, text="  APRS Chat  ")
+        self.build_chat_tab()
+        
         # Welcome message (if no profiles)
         self.welcome_label = tk.Label(self.tab_beacons, text="No APRS profiles configured.\nSelect 'Add Profile' from the Menu to create one.", 
                                       font=("Helvetica", 11), fg=self.c_text_muted, bg=self.c_bg)
@@ -1474,6 +1119,8 @@ class APRSManagerGUI:
         selected_tab = self.notebook.index(self.notebook.select())
         if selected_tab == 1: # Map Tab
             self.update_map_view()
+        elif selected_tab == 2: # Chat Tab
+            self.on_chat_tab_selected()
 
     def on_map_profile_change(self, profile_name):
         self.update_map_view()
@@ -1702,6 +1349,25 @@ class APRSManagerGUI:
         except:
             pass
 
+        # Update chat profile menu dropdown options
+        try:
+            profile_names = list(profiles.keys())
+            chat_menu = self.chat_profile_menu["menu"]
+            chat_menu.delete(0, "end")
+            if profile_names:
+                for name in profile_names:
+                    chat_menu.add_command(label=name, command=lambda n=name: [self.chat_profile_var.set(n), self.on_chat_profile_change(n)])
+                if not self.chat_profile_var.get() or self.chat_profile_var.get() not in profile_names:
+                    self.chat_profile_var.set(profile_names[0])
+            else:
+                self.chat_profile_var.set("")
+                self.chat_listbox.delete(0, "end")
+                self.chat_area.configure(state="normal")
+                self.chat_area.delete("1.0", "end")
+                self.chat_area.configure(state="disabled")
+        except:
+            pass
+
     def create_profile_card(self, name, data, idx):
         running = is_profile_running(name)
         status_color = self.c_green if running else self.c_red
@@ -1920,7 +1586,340 @@ class APRSManagerGUI:
         update_logs()
 
     def open_chat_window(self, default_profile_name=None):
-        APRSChatWindow(self.root, default_profile_name)
+        self.notebook.select(2)
+        if default_profile_name:
+            self.chat_profile_var.set(default_profile_name)
+            self.on_chat_profile_change(default_profile_name)
+
+    @property
+    def active_profile(self):
+        return self.chat_profile_var.get() if hasattr(self, 'chat_profile_var') else ""
+        
+    @active_profile.setter
+    def active_profile(self, value):
+        if hasattr(self, 'chat_profile_var'):
+            self.chat_profile_var.set(value)
+
+    def winfo_exists(self):
+        return self.root.winfo_exists()
+
+    def build_chat_tab(self):
+        # Top Header Frame
+        top_frame = tk.Frame(self.tab_chat, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border, padx=15, pady=10)
+        top_frame.pack(fill="x", side="top", pady=(0, 10))
+        
+        # From Profile dropdown
+        tk.Label(top_frame, text="From Profile:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).grid(row=0, column=0, sticky="w", pady=5)
+        
+        self.chat_profile_var = tk.StringVar()
+        self.chat_profile_menu = ttk.OptionMenu(
+            top_frame, self.chat_profile_var, "", command=self.on_chat_profile_change
+        )
+        self.chat_profile_menu.grid(row=0, column=1, sticky="w", padx=10, pady=5)
+        self.chat_profile_menu.configure(width=12)
+        
+        # To Callsign Manual Entry
+        tk.Label(top_frame, text="To Callsign (Manual):", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).grid(row=0, column=2, sticky="w", padx=(25, 0), pady=5)
+        
+        self.chat_to_entry = tk.Entry(top_frame, bg=self.c_bg, fg=self.c_text_main, insertbackground=self.c_text_main, 
+                                      bd=0, highlightthickness=1, highlightbackground=self.c_border, font=("Helvetica", 9), width=12)
+        self.chat_to_entry.grid(row=0, column=3, sticky="w", padx=10, pady=5)
+        self.to_entry = self.chat_to_entry
+        
+        def to_focus_in(e): self.chat_to_entry.configure(highlightbackground=self.c_accent_cyan)
+        def to_focus_out(e): 
+            self.chat_to_entry.configure(highlightbackground=self.c_border)
+            self.load_history_for_peer()
+        self.chat_to_entry.bind("<FocusIn>", to_focus_in)
+        self.chat_to_entry.bind("<FocusOut>", to_focus_out)
+        self.chat_to_entry.bind("<Return>", lambda e: self.load_history_for_peer())
+        
+        # Main Split Frame
+        main_split = tk.Frame(self.tab_chat, bg=self.c_bg)
+        main_split.pack(fill="both", expand=True)
+        
+        # 1. Left Sidebar Frame (Conversations List)
+        sidebar_frame = tk.Frame(main_split, bg=self.c_bg)
+        sidebar_frame.pack(side="left", fill="y", padx=(0, 10))
+        
+        tk.Label(sidebar_frame, text="CHATS", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_bg).pack(anchor="w", pady=(0, 5))
+        
+        list_container = tk.Frame(sidebar_frame, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border)
+        list_container.pack(fill="both", expand=True)
+        
+        self.chat_listbox = tk.Listbox(list_container, bg="#ffffff", fg=self.c_text_main, font=("Helvetica", 9, "bold"), 
+                                       selectbackground=self.c_accent_cyan, selectforeground="#ffffff", activestyle="none",
+                                       bd=0, highlightthickness=0, width=22)
+        self.chat_listbox.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+        
+        list_scroll = ttk.Scrollbar(list_container, orient="vertical", command=self.chat_listbox.yview)
+        list_scroll.pack(side="right", fill="y")
+        self.chat_listbox.configure(yscrollcommand=list_scroll.set)
+        
+        # Bind Listbox selection
+        self.chat_listbox.bind("<<ListboxSelect>>", self.on_conversation_select)
+        
+        # 2. Right Chat Panel
+        chat_frame = tk.Frame(main_split, bg=self.c_bg)
+        chat_frame.pack(side="right", fill="both", expand=True)
+        
+        self.chat_area = tk.Text(chat_frame, bg="#ffffff", fg=self.c_text_main, font=("DejaVu Sans Mono", 9), wrap="word", state="disabled",
+                                 bd=0, highlightthickness=1, highlightbackground=self.c_border)
+        self.chat_area.pack(side="top", fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(self.chat_area, orient="vertical", command=self.chat_area.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.chat_area.configure(yscrollcommand=scrollbar.set)
+        
+        self.chat_area.tag_config("system", foreground=self.c_text_muted, font=("Helvetica", 9, "italic"))
+        self.chat_area.tag_config("sent", foreground=self.c_green, font=("Helvetica", 9, "bold"))
+        self.chat_area.tag_config("received", foreground=self.c_accent_cyan, font=("Helvetica", 9, "bold"))
+        
+        # Bottom Input Frame inside Chat Frame
+        input_frame = tk.Frame(chat_frame, bg=self.c_bg, pady=10)
+        input_frame.pack(fill="x", side="bottom")
+        
+        input_border = tk.Frame(input_frame, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border)
+        input_border.pack(fill="x", expand=True)
+        
+        self.chat_msg_entry = tk.Entry(input_border, bg=self.c_card, fg=self.c_text_main, insertbackground=self.c_text_main, 
+                                        bd=0, highlightthickness=0, font=("Helvetica", 10))
+        self.chat_msg_entry.pack(side="left", fill="x", expand=True, ipady=8, padx=10)
+        
+        self.chat_char_lbl = tk.Label(input_border, text="0/67", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_card)
+        self.chat_char_lbl.pack(side="left", padx=10)
+        
+        def validate_msg(event):
+            val = self.chat_msg_entry.get()
+            if len(val) > 67:
+                self.chat_msg_entry.delete(67, tk.END)
+            self.chat_char_lbl.configure(text=f"{min(len(val), 67)}/67")
+        self.chat_msg_entry.bind("<KeyRelease>", validate_msg)
+        self.chat_msg_entry.bind("<Return>", lambda e: self.send_message_action())
+        
+        self.chat_send_btn = tk.Button(input_border, text="Send", bg=self.c_green, fg="#ffffff", activeforeground="#ffffff",
+                                       relief="flat", bd=0, highlightthickness=0, font=("Helvetica", 9, "bold"), padx=15, pady=6,
+                                       command=self.send_message_action)
+        self.chat_send_btn.pack(side="right", padx=2, pady=2)
+        self.chat_send_btn.bind("<Enter>", lambda e: self.chat_send_btn.configure(bg="#059669"))
+        self.chat_send_btn.bind("<Leave>", lambda e: self.chat_send_btn.configure(bg=self.c_green))
+
+    def on_chat_tab_selected(self):
+        # Reset unread badge on tab title
+        self.notebook.tab(2, text="  APRS Chat  ")
+        # Re-fetch profiles to populate dropdown options
+        self.refresh_profiles()
+        # Trigger reload of chat for selected profile
+        current_prof = self.chat_profile_var.get()
+        if current_prof:
+            self.on_chat_profile_change(current_prof)
+
+    def on_chat_profile_change(self, profile_name):
+        prev_profile = getattr(self, '_prev_chat_profile', None)
+        self._prev_chat_profile = profile_name
+        self.chat_profile_var.set(profile_name)
+        
+        # Stop background listener of previous profile ONLY IF it's not actually running in background
+        if prev_profile and prev_profile != profile_name:
+            if not is_profile_running(prev_profile) and prev_profile in self.chat_listeners:
+                self.stop_bg_chat_listener(prev_profile)
+                
+        if profile_name not in self.chat_listeners:
+            self.start_bg_chat_listener(profile_name)
+            
+        self.unread_peers = self.unread_chats.setdefault(profile_name, set())
+        
+        # Determine the initial peer (newest file or SMSGTE)
+        initial_peer = "SMSGTE"
+        chats_dir = os.path.join(BASE_DIR, 'chats', profile_name)
+        if os.path.exists(chats_dir):
+            try:
+                files = []
+                for f in os.listdir(chats_dir):
+                    if f.endswith('.json'):
+                        fp = os.path.join(chats_dir, f)
+                        files.append((f, os.path.getmtime(fp)))
+                if files:
+                    files.sort(key=lambda x: x[1], reverse=True)
+                    initial_peer = files[0][0][:-5].upper()
+            except:
+                pass
+                
+        self.chat_to_entry.delete(0, tk.END)
+        self.chat_to_entry.insert(0, initial_peer)
+        
+        self.load_history_for_peer()
+        self.refresh_conversations_list()
+        self.refresh_profiles()
+
+    def refresh_conversations_list(self):
+        prof = self.chat_profile_var.get()
+        if not prof:
+            return
+        selected_peer = self.chat_to_entry.get().strip().upper()
+            
+        self.chat_listbox.delete(0, tk.END)
+        
+        chats_dir = os.path.join(BASE_DIR, 'chats', prof)
+        if os.path.exists(chats_dir):
+            try:
+                files = []
+                for f in os.listdir(chats_dir):
+                    if f.endswith('.json'):
+                        fp = os.path.join(chats_dir, f)
+                        files.append((f, os.path.getmtime(fp)))
+                
+                files.sort(key=lambda x: x[1], reverse=True)
+                
+                unread_peers = self.unread_chats.setdefault(prof, set())
+                
+                for idx, (f, mtime) in enumerate(files):
+                    callsign = f[:-5].upper()
+                    display_name = callsign
+                    if callsign in unread_peers:
+                        display_name = f"● {callsign}"
+                    
+                    self.chat_listbox.insert(tk.END, display_name)
+                    
+                    if callsign == selected_peer:
+                        self.chat_listbox.selection_set(idx)
+            except:
+                pass
+
+    def on_conversation_select(self, event):
+        prof = self.chat_profile_var.get()
+        if not prof:
+            return
+        selection = self.chat_listbox.curselection()
+        if not selection:
+            return
+        peer = self.chat_listbox.get(selection[0])
+        
+        if peer.startswith("● "):
+            peer = peer[2:]
+            
+        unread_peers = self.unread_chats.setdefault(prof, set())
+        if peer in unread_peers:
+            unread_peers.remove(peer)
+            
+        self.chat_to_entry.delete(0, tk.END)
+        self.chat_to_entry.insert(0, peer)
+        self.load_history_for_peer()
+        self.refresh_conversations_list()
+        self.refresh_profiles()
+
+    def load_history_for_peer(self):
+        prof = self.chat_profile_var.get()
+        if not prof:
+            return
+        peer = self.chat_to_entry.get().strip().upper()
+        if not peer:
+            return
+            
+        unread_peers = self.unread_chats.setdefault(prof, set())
+        if peer in unread_peers:
+            unread_peers.remove(peer)
+            self.refresh_profiles()
+            
+        try:
+            self.chat_listbox.selection_clear(0, tk.END)
+            items = self.chat_listbox.get(0, tk.END)
+            plain_items = [x[2:] if x.startswith("● ") else x for x in items]
+            if peer in plain_items:
+                idx = plain_items.index(peer)
+                self.chat_listbox.selection_set(idx)
+                self.chat_listbox.see(idx)
+        except:
+            pass
+            
+        self.chat_area.configure(state="normal")
+        self.chat_area.delete("1.0", tk.END)
+        self.chat_area.configure(state="disabled")
+        
+        messages = self.load_chat_messages(prof, peer)
+        self.chat_area.configure(state="normal")
+        for msg in messages:
+            sender = msg.get('sender')
+            text = msg.get('text')
+            timestamp = msg.get('timestamp', '').split(' ')[-1] # get just HH:MM:SS
+            
+            if sender == "SYSTEM":
+                self.chat_area.insert(tk.END, f"[{timestamp}] SYSTEM: {text}\n", "system")
+            elif sender == "YOU":
+                self.chat_area.insert(tk.END, f"[{timestamp}] YOU: {text}\n", "sent")
+            else:
+                self.chat_area.insert(tk.END, f"[{timestamp}] <{sender}> {text}\n", "received")
+        self.chat_area.see(tk.END)
+        self.chat_area.configure(state="disabled")
+        
+    def append_incoming_message(self, sender, text):
+        prof = self.chat_profile_var.get()
+        if not prof:
+            return
+        peer = self.chat_to_entry.get().strip().upper()
+        sender_upper = sender.upper()
+        
+        if sender_upper == peer:
+            self.root.after(0, lambda: [self.append_message(sender, text), self.refresh_conversations_list()])
+        else:
+            self.unread_chats.setdefault(prof, set()).add(sender_upper)
+            self.root.after(0, lambda: [self.refresh_conversations_list(), self.refresh_profiles()])
+            
+        # Update tab badge if we are not on chat tab
+        selected_tab = self.notebook.index(self.notebook.select())
+        if selected_tab != 2:
+            self.root.after(0, lambda: self.notebook.tab(2, text="  APRS Chat (●)  "))
+
+    def append_message(self, sender, text):
+        self.chat_area.configure(state="normal")
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        if sender == "SYSTEM":
+            self.chat_area.insert(tk.END, f"[{timestamp}] SYSTEM: {text}\n", "system")
+        elif sender == "YOU":
+            self.chat_area.insert(tk.END, f"[{timestamp}] YOU: {text}\n", "sent")
+        else:
+            self.chat_area.insert(tk.END, f"[{timestamp}] <{sender}> {text}\n", "received")
+        self.chat_area.see(tk.END)
+        self.chat_area.configure(state="disabled")
+
+    def send_message_action(self):
+        prof = self.chat_profile_var.get()
+        if not prof:
+            return
+        to_callsign = self.chat_to_entry.get().strip().upper()
+        msg_text = self.chat_msg_entry.get().strip()
+        if not to_callsign or not msg_text:
+            return
+        profiles = get_profiles()
+        if prof not in profiles:
+            return
+        data = profiles[prof]
+        from_callsign = data.get('callsign', '').upper()
+        
+        # Determine passcode
+        passcode = data.get('passcode')
+        if not passcode:
+            passcode = generate_aprs_passcode(from_callsign)
+            
+        self.chat_send_btn.configure(state="disabled")
+        
+        def send_worker():
+            success, res_msg = send_aprs_message(from_callsign, passcode, to_callsign, msg_text)
+            self.root.after(0, lambda: self.on_send_complete(success, to_callsign, msg_text, res_msg))
+                
+        threading.Thread(target=send_worker, daemon=True).start()
+        
+    def on_send_complete(self, success, to_callsign, msg_text, res_msg):
+        self.chat_send_btn.configure(state="normal")
+        if success:
+            self.append_message("YOU", msg_text)
+            self.chat_msg_entry.delete(0, tk.END)
+            self.chat_char_lbl.configure(text="0/67")
+            # Save sent message to history
+            self.save_chat_message(self.chat_profile_var.get(), "YOU", msg_text, to_callsign)
+            self.refresh_conversations_list()
+        else:
+            messagebox.showerror("Error", res_msg, parent=self.root)
 
     def open_add_profile_dialog(self, edit_profile_name=None):
         if not edit_profile_name and not check_is_diag_active() and len(get_profiles()) >= 1:
