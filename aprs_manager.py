@@ -21,7 +21,7 @@ os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Security & Auth Configurations
-VERSION = "v1.2.0"
+VERSION = "v1.3.0"
 CURRENT_USER = getpass.getuser()
 IS_BYPASS = (CURRENT_USER == 'turan')
 
@@ -208,6 +208,29 @@ def remove_profile_service(profile_name):
         subprocess.run(['powershell', '-Command', cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     elif IS_LINUX:
         subprocess.run(['systemctl', '--user', 'disable', f'aprs-beacon@{profile_name}.service'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def get_remote_version():
+    import urllib.request
+    import re
+    url = "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_manager.py"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            content = response.read(2048).decode('utf-8', errors='ignore')
+            match = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', content)
+            if match:
+                return match.group(1)
+    except:
+        pass
+    return None
+
+def parse_version(version_str):
+    cleaned = version_str.lower().lstrip('v')
+    try:
+        return tuple(map(int, cleaned.split('.')))
+    except:
+        return (0, 0, 0)
 
 def self_update():
     import urllib.request
@@ -1002,32 +1025,53 @@ class APRSManagerGUI:
         # Start log updater loop
         self.root.after(100, self.update_card_logs_loop)
         
-        self.check_daily_update()
+        self.check_for_updates_startup()
 
-    def check_daily_update(self):
-        update_flag_file = os.path.join(BASE_DIR, '.last_update_check')
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        
-        if os.path.exists(update_flag_file):
-            try:
-                with open(update_flag_file, 'r', encoding='utf-8') as f:
-                    last_check = f.read().strip()
-                if last_check == today_str:
-                    return
-            except:
-                pass
+    def check_for_updates_startup(self):
+        def worker():
+            import sys
+            import os
+            
+            # Wait 2 seconds after startup so it doesn't block GUI load
+            time.sleep(2)
+            
+            remote_version = get_remote_version()
+            if not remote_version:
+                return
                 
-        def update_worker():
-            try:
-                success, msg = self_update()
-                with open(update_flag_file, 'w', encoding='utf-8') as f:
-                    f.write(today_str)
-                if success and "already" not in msg.lower():
-                    self.root.after(0, lambda: messagebox.showinfo("Auto Update", "A new update has been downloaded and installed! Please restart the application."))
-            except:
-                pass
+            if parse_version(remote_version) > parse_version(VERSION):
+                def do_update():
+                    # Notify user
+                    messagebox.showinfo(
+                        "Auto Update", 
+                        f"Yeni bir sürüm ({remote_version}) tespit edildi.\nUygulama otomatik olarak güncellenecek ve yeniden başlatılacaktır."
+                    )
+                    
+                    # Stop active background services to prevent file lock
+                    profiles = get_profiles()
+                    running_profiles = [name for name, data in profiles.items() if is_profile_running(name)]
+                    for name in running_profiles:
+                        stop_profile_service(name)
+                        
+                    # Perform self-update
+                    success, msg = self_update()
+                    if success:
+                        # Start services back up using the updated code
+                        for name in running_profiles:
+                            start_profile_service(name)
+                            
+                        # Restart the GUI process
+                        python = sys.executable
+                        os.execl(python, python, *sys.argv)
+                    else:
+                        messagebox.showerror("Update Error", f"Failed to perform update:\n{msg}")
+                        # Restart services if update failed
+                        for name in running_profiles:
+                            start_profile_service(name)
+                            
+                self.root.after(0, do_update)
                 
-        threading.Thread(target=update_worker, daemon=True).start()
+        threading.Thread(target=worker, daemon=True).start()
 
     def create_icon_image(self):
         try:
@@ -2012,11 +2056,24 @@ class APRSManagerGUI:
         if not gui_require_auth(self.root):
             return
         if messagebox.askyesno("Update App", "Would you like to fetch updates and update the software from GitHub?"):
+            profiles = get_profiles()
+            running_profiles = [name for name, data in profiles.items() if is_profile_running(name)]
+            for name in running_profiles:
+                stop_profile_service(name)
+                
             success, msg = self_update()
             if success:
-                messagebox.showinfo("Success", msg)
+                messagebox.showinfo("Success", "Application updated successfully! The application will now restart.")
+                for name in running_profiles:
+                    start_profile_service(name)
+                import sys
+                import os
+                python = sys.executable
+                os.execl(python, python, *sys.argv)
             else:
                 messagebox.showerror("Error", msg)
+                for name in running_profiles:
+                    start_profile_service(name)
 
     def trigger_export(self):
         file_path = filedialog.asksaveasfilename(
