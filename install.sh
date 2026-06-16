@@ -26,8 +26,6 @@ if ! command -v python3 &> /dev/null; then
     echo -e "${C_YELLOW}[!] Python3 not found on the system. Installing...${C_RESET}"
     if command -v apt-get &> /dev/null; then
         sudo apt-get update && sudo apt-get install -y python3
-    elif [ -d "/data/data/com.termux" ]; then
-        pkg update && pkg install -y python python-apt
     else
         echo -e "${C_RED}[!] Error: Python3 could not be installed automatically. Please install it manually.${C_RESET}"
         exit 1
@@ -40,34 +38,26 @@ LOGS_DIR="$INSTALL_DIR/logs"
 mkdir -p "$PROFILES_DIR" "$LOGS_DIR"
 echo "$(pwd)" > "$INSTALL_DIR/.repo_path"
 
-# Android / Termux Detection
-IS_ANDROID=false
-if [ -d "/data/data/com.termux" ] || [ -n "$TERMUX_VERSION" ]; then
-    IS_ANDROID=true
-fi
-
 # GUI Dependencies Installation (for Linux)
 HAS_GUI=true
-if [ "$IS_ANDROID" = false ]; then
-    # Graphic environment check
-    if [ -z "$DISPLAY" ]; then
-        HAS_GUI=false
-        echo -e "${C_YELLOW}[!] Display environment (DISPLAY) not detected. Performing headless install.${C_RESET}"
-    fi
+# Graphic environment check
+if [ -z "$DISPLAY" ]; then
+    HAS_GUI=false
+    echo -e "${C_YELLOW}[!] Display environment (DISPLAY) not detected. Performing headless install.${C_RESET}"
+fi
 
-    if [ "$HAS_GUI" = true ]; then
-        echo -e "${C_BLUE}[i] Checking GUI, System Tray, and Image libraries (pystray, tkinter, pillow)...${C_RESET}"
-        if ! python3 -c "import tkinter; import pystray; import PIL" &>/dev/null; then
-            echo -e "${C_YELLOW}[!] Required GUI packages are missing. Installing...${C_RESET}"
-            if command -v apt-get &> /dev/null; then
-                echo -e "${C_BLUE}[i] Administrative privileges (sudo) may be requested:${C_RESET}"
-                sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray python3-pil
-            else
-                echo -e "${C_RED}[!] Error: Package manager (apt-get) not found. Please install python3-tk, python3-pystray, and python3-pil manually.${C_RESET}"
-            fi
+if [ "$HAS_GUI" = true ]; then
+    echo -e "${C_BLUE}[i] Checking GUI, System Tray, and Image libraries (pystray, tkinter, pillow)...${C_RESET}"
+    if ! python3 -c "import tkinter; import pystray; import PIL" &>/dev/null; then
+        echo -e "${C_YELLOW}[!] Required GUI packages are missing. Installing...${C_RESET}"
+        if command -v apt-get &> /dev/null; then
+            echo -e "${C_BLUE}[i] Administrative privileges (sudo) may be requested:${C_RESET}"
+            sudo apt-get update && sudo apt-get install -y python3-tk python3-pystray python3-pil
         else
-            echo -e "${C_GREEN}[+] Required GUI packages are ready.${C_RESET}"
+            echo -e "${C_RED}[!] Error: Package manager (apt-get) not found. Please install python3-tk, python3-pystray, and python3-pil manually.${C_RESET}"
         fi
+    else
+        echo -e "${C_GREEN}[+] Required GUI packages are ready.${C_RESET}"
     fi
 fi
 
@@ -151,31 +141,16 @@ case "$SYM_CHOICE" in
     *) SYMBOL_CODE="X" ;;
 esac
 
-USE_TERMUX_GPS="false"
 LATITUDE=""
 LONGITUDE=""
 
-if [ "$IS_ANDROID" = true ]; then
-    echo -e "\n5. Location Setting (Android):"
-    echo -e "  ${C_YELLOW}Tip: To use the phone's internal GPS, Termux:API app must be installed and location permission granted.${C_RESET}"
-    read -p "Do you want to fetch phone GPS location automatically? [Y/n]: " OPT_GPS
-    OPT_GPS=$(echo "$OPT_GPS" | tr 'A-Z' 'a-z' | xargs)
-    if [ "$OPT_GPS" != "n" ]; then
-        USE_TERMUX_GPS="true"
-        LATITUDE="0.0"
-        LONGITUDE="0.0"
-        echo -e "${C_GREEN}[+] Internal GPS enabled. Skipping manual coordinates.${C_RESET}"
-    fi
-fi
+# 5. Coordinates
+read -p "5. Do you want to automatically detect your coordinates via IP? [Y/n]: " AUTO_LOC
+AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
 
-if [ "$USE_TERMUX_GPS" = "false" ]; then
-    # 5. Coordinates
-    read -p "5. Do you want to automatically detect your coordinates via IP? [Y/n]: " AUTO_LOC
-    AUTO_LOC=$(echo "$AUTO_LOC" | tr 'A-Z' 'a-z' | xargs)
-
-    if [ "$AUTO_LOC" != "n" ]; then
-        echo -e "${C_BLUE}[i] Detecting coordinates via IP...${C_RESET}"
-        IP_LOC=$(python3 -c "
+if [ "$AUTO_LOC" != "n" ]; then
+    echo -e "${C_BLUE}[i] Detecting coordinates via IP...${C_RESET}"
+    IP_LOC=$(python3 -c "
 import urllib.request, json
 urls = ['http://ip-api.com/json', 'https://ipapi.co/json/']
 for url in urls:
@@ -193,38 +168,37 @@ for url in urls:
     except:
         continue
 ")
-        if [ -n "$IP_LOC" ]; then
-            IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
-            echo -e "${C_GREEN}[+] Automatically Detected Location: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
-            LATITUDE="$LAT"
-            LONGITUDE="$LON"
-        else
-            echo -e "${C_RED}[!] IP location detection failed.${C_RESET}"
-        fi
+    if [ -n "$IP_LOC" ]; then
+        IFS=',' read -r LAT LON CITY COUNTRY <<< "$IP_LOC"
+        echo -e "${C_GREEN}[+] Automatically Detected Location: $CITY, $COUNTRY ($LAT, $LON)${C_RESET}"
+        LATITUDE="$LAT"
+        LONGITUDE="$LON"
+    else
+        echo -e "${C_RED}[!] IP location detection failed.${C_RESET}"
     fi
+fi
 
-    if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
-        echo -e "${C_BLUE}[i] Opening OpenStreetMap in browser to help find coordinates...${C_RESET}"
-        python3 -m webbrowser "https://www.openstreetmap.org" &>/dev/null &
-        
-        echo -e "${C_YELLOW}[!] Please enter coordinates manually (copy latitude/longitude from map):${C_RESET}"
-        while true; do
-            read -p "  Latitude (e.g. 41.037002): " LATITUDE
-            LATITUDE=$(echo "$LATITUDE" | xargs)
-            if python3 -c "float('$LATITUDE')" &>/dev/null; then
-                break
-            fi
-            echo -e "${C_RED}Error: Invalid latitude value!${C_RESET}"
-        done
-        while true; do
-            read -p "  Longitude (e.g. 28.985012): " LONGITUDE
-            LONGITUDE=$(echo "$LONGITUDE" | xargs)
-            if python3 -c "float('$LONGITUDE')" &>/dev/null; then
-                break
-            fi
-            echo -e "${C_RED}Error: Invalid longitude value!${C_RESET}"
-        done
-    fi
+if [ -z "$LATITUDE" ] || [ -z "$LONGITUDE" ]; then
+    echo -e "${C_BLUE}[i] Opening OpenStreetMap in browser to help find coordinates...${C_RESET}"
+    python3 -m webbrowser "https://www.openstreetmap.org" &>/dev/null &
+    
+    echo -e "${C_YELLOW}[!] Please enter coordinates manually (copy latitude/longitude from map):${C_RESET}"
+    while true; do
+        read -p "  Latitude (e.g. 41.037002): " LATITUDE
+        LATITUDE=$(echo "$LATITUDE" | xargs)
+        if python3 -c "float('$LATITUDE')" &>/dev/null; then
+            break
+        fi
+        echo -e "${C_RED}Error: Invalid latitude value!${C_RESET}"
+    done
+    while true; do
+        read -p "  Longitude (e.g. 28.985012): " LONGITUDE
+        LONGITUDE=$(echo "$LONGITUDE" | xargs)
+        if python3 -c "float('$LONGITUDE')" &>/dev/null; then
+            break
+        fi
+        echo -e "${C_RED}Error: Invalid longitude value!${C_RESET}"
+    done
 fi
 
 # 6. Interval
@@ -256,7 +230,7 @@ cat <<EOF > "$PROFILES_DIR/$PROFILE_NAME.json"
     "passcode": $PASSCODE,
     "latitude": $LATITUDE,
     "longitude": $LONGITUDE,
-    "use_termux_gps": $USE_TERMUX_GPS,
+    "use_termux_gps": false,
     "symbol_table": "$SYMBOL_TABLE",
     "symbol_code": "$SYMBOL_CODE",
     "comment": "$COMMENT",
@@ -307,40 +281,16 @@ else
     fi
 fi
 
-# Service setup and startup
-if [ "$IS_ANDROID" = true ]; then
-    # Android/Termux startup
-    echo -e "\n7. Startup Settings (Android):"
-    read -p "Start automatically in background on boot? [Y/n]: " AUTO_START
-    AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
-    
-    BOOT_DIR="$HOME/.termux/boot"
-    mkdir -p "$BOOT_DIR"
-    
-    cat <<EOF > "$BOOT_DIR/aprs-beacon-$PROFILE_NAME"
-#!/usr/bin/env bash
-termux-wake-lock
-nohup python3 $INSTALL_DIR/aprs_beacon.py --profile $PROFILE_NAME >/dev/null 2>&1 &
-EOF
-    chmod +x "$BOOT_DIR/aprs-beacon-$PROFILE_NAME"
-    
-    if [ "$AUTO_START" != "n" ]; then
-        echo -e "${C_BLUE}[i] Starting daemon service in background (nohup)...${C_RESET}"
-        termux-wake-lock
-        pkill -f "aprs_beacon.py --profile $PROFILE_NAME" 2>/dev/null
-        nohup python3 $INSTALL_DIR/aprs_beacon.py --profile $PROFILE_NAME >/dev/null 2>&1 &
-    fi
-else
-    # Linux systemd startup
-    echo -e "\n7. Startup Settings (Linux):"
-    read -p "Start this profile automatically on system boot? [Y/n]: " AUTO_START
-    AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
+# Linux systemd startup
+echo -e "\n7. Startup Settings (Linux):"
+read -p "Start this profile automatically on system boot? [Y/n]: " AUTO_START
+AUTO_START=$(echo "$AUTO_START" | tr 'A-Z' 'a-z' | xargs)
 
-    # Generate systemd user service template
-    SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-    mkdir -p "$SYSTEMD_USER_DIR"
+# Generate systemd user service template
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_USER_DIR"
 
-    cat <<EOF > "$SYSTEMD_USER_DIR/aprs-beacon@.service"
+cat <<EOF > "$SYSTEMD_USER_DIR/aprs-beacon@.service"
 [Unit]
 Description=APRS Background Beacon Service (%i)
 After=network-online.target
@@ -357,20 +307,20 @@ WorkingDirectory=$INSTALL_DIR
 WantedBy=default.target
 EOF
 
-    systemctl --user daemon-reload
+systemctl --user daemon-reload
 
-    if [ "$AUTO_START" != "n" ]; then
-        echo -e "${C_BLUE}[i] Enabling and starting daemon service...${C_RESET}"
-        systemctl --user enable aprs-beacon@$PROFILE_NAME.service
-        systemctl --user restart aprs-beacon@$PROFILE_NAME.service
-        loginctl enable-linger "$USER" 2>/dev/null
-    fi
+if [ "$AUTO_START" != "n" ]; then
+    echo -e "${C_BLUE}[i] Enabling and starting daemon service...${C_RESET}"
+    systemctl --user enable aprs-beacon@$PROFILE_NAME.service
+    systemctl --user restart aprs-beacon@$PROFILE_NAME.service
+    loginctl enable-linger "$USER" 2>/dev/null
+fi
 
-    # Create desktop shortcut launcher (if GUI available)
-    if [ "$HAS_GUI" = true ]; then
-        DESKTOP_DIR="$HOME/.local/share/applications"
-        mkdir -p "$DESKTOP_DIR"
-        cat <<EOF > "$DESKTOP_DIR/aprs-manager.desktop"
+# Create desktop shortcut launcher (if GUI available)
+if [ "$HAS_GUI" = true ]; then
+    DESKTOP_DIR="$HOME/.local/share/applications"
+    mkdir -p "$DESKTOP_DIR"
+    cat <<EOF > "$DESKTOP_DIR/aprs-manager.desktop"
 [Desktop Entry]
 Type=Application
 Name=APRS Multi-Beacon Manager
@@ -380,13 +330,12 @@ Icon=radio
 Terminal=false
 Categories=Utility;Network;
 EOF
-        chmod +x "$DESKTOP_DIR/aprs-manager.desktop"
+    chmod +x "$DESKTOP_DIR/aprs-manager.desktop"
 
-        # Add manager to session autostart
-        AUTOSTART_DIR="$HOME/.config/autostart"
-        mkdir -p "$AUTOSTART_DIR"
-        cp "$DESKTOP_DIR/aprs-manager.desktop" "$AUTOSTART_DIR/"
-    fi
+    # Add manager to session autostart
+    AUTOSTART_DIR="$HOME/.config/autostart"
+    mkdir -p "$AUTOSTART_DIR"
+    cp "$DESKTOP_DIR/aprs-manager.desktop" "$AUTOSTART_DIR/"
 fi
 
 # Post-install info summary
@@ -398,18 +347,16 @@ echo -e "${C_BOLD}Callsign         :${C_RESET} $CALLSIGN"
 echo -e "${C_BOLD}Interval         :${C_RESET} Every $INTERVAL_MINUTES minute(s)"
 echo -e "${C_BOLD}APRS Thursday    :${C_RESET} $([ "$APRS_THURSDAY" = "true" ] && echo "Enabled" || echo "Disabled")"
 echo -e "${C_BOLD}Autostart on Boot:${C_RESET} Yes"
-if [ "$IS_ANDROID" = false ]; then
-    echo -e "----------------------------------------------------------------"
-    if [ "$HAS_GUI" = true ]; then
-        echo -e "${C_CYAN}Desktop Interface :${C_RESET} Launch 'APRS Multi-Beacon Manager' from application menu."
-        echo -e "${C_CYAN}System Tray Icon  :${C_RESET} System tray icon will appear upon launching."
-    else
-        echo -e "${C_YELLOW}Note: No graphic display detected. Launch control panel from terminal.${C_RESET}"
-    fi
-    echo -e "${C_CYAN}CLI / Terminal Management:${C_RESET}"
-    echo -e "  - Open Interactive Menu: python3 $INSTALL_DIR/aprs_manager.py"
-    echo -e "  - List Beacon Profiles:  python3 $INSTALL_DIR/aprs_manager.py list"
-    echo -e "  - Start Profile Daemon:  python3 $INSTALL_DIR/aprs_manager.py start $PROFILE_NAME"
-    echo -e "  - Stop Profile Daemon:   python3 $INSTALL_DIR/aprs_manager.py stop $PROFILE_NAME"
+echo -e "----------------------------------------------------------------"
+if [ "$HAS_GUI" = true ]; then
+    echo -e "${C_CYAN}Desktop Interface :${C_RESET} Launch 'APRS Multi-Beacon Manager' from application menu."
+    echo -e "${C_CYAN}System Tray Icon  :${C_RESET} System tray icon will appear upon launching."
+else
+    echo -e "${C_YELLOW}Note: No graphic display detected. Launch control panel from terminal.${C_RESET}"
 fi
+echo -e "${C_CYAN}CLI / Terminal Management:${C_RESET}"
+echo -e "  - Open Interactive Menu: python3 $INSTALL_DIR/aprs_manager.py"
+echo -e "  - List Beacon Profiles:  python3 $INSTALL_DIR/aprs_manager.py list"
+echo -e "  - Start Profile Daemon:  python3 $INSTALL_DIR/aprs_manager.py start $PROFILE_NAME"
+echo -e "  - Stop Profile Daemon:   python3 $INSTALL_DIR/aprs_manager.py stop $PROFILE_NAME"
 echo -e "${C_GREEN}${C_BOLD}================================================================${C_RESET}\n"

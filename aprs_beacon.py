@@ -71,52 +71,6 @@ def generate_aprs_passcode(callsign):
         hash_val ^= (char1 + char2)
     return hash_val & 0x7fff
 
-def get_termux_gps():
-    # Step 1: Query last known location (instant)
-    try:
-        log_message("Querying last known GPS coordinates via Termux:API...")
-        result = subprocess.run(['termux-location', '-r', 'last'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            lat = data.get('latitude')
-            lon = data.get('longitude')
-            if lat is not None and lon is not None and lat != 0.0 and lon != 0.0:
-                log_message(f"Success (Last Known Location): {lat}, {lon}")
-                return float(lat), float(lon)
-    except Exception as e:
-        log_message(f"Error reading last known location: {e}")
-
-    # Step 2: Query network/Wi-Fi location
-    try:
-        log_message("Querying network/Wi-Fi location via Termux:API...")
-        result = subprocess.run(['termux-location', '-p', 'network'], capture_output=True, text=True, timeout=8)
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            lat = data.get('latitude')
-            lon = data.get('longitude')
-            if lat is not None and lon is not None and lat != 0.0 and lon != 0.0:
-                log_message(f"Success (Network Location): {lat}, {lon}")
-                return float(lat), float(lon)
-    except Exception as e:
-        log_message(f"Error reading network location: {e}")
-
-    # Step 3: Query GPS satellites
-    try:
-        log_message("Querying current satellite GPS coordinates via Termux:API...")
-        result = subprocess.run(['termux-location', '-p', 'gps'], capture_output=True, text=True, timeout=12)
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            lat = data.get('latitude')
-            lon = data.get('longitude')
-            if lat is not None and lon is not None:
-                log_message(f"Success (GPS Location): {lat}, {lon}")
-                return float(lat), float(lon)
-    except Exception as e:
-        log_message(f"Error reading satellite GPS location: {e}")
-        
-    log_message("ERROR: Failed to retrieve location from Termux:API.")
-    return None
-
 def send_aprs_raw_packet(config, packet):
     callsign = config['callsign'].upper()
     passcode = config.get('passcode')
@@ -197,19 +151,8 @@ def send_aprs_thursday_sequence(config, today_str):
 def send_beacon(config):
     callsign = config['callsign'].upper()
     
-    lat = None
-    lon = None
-    
-    if config.get('use_termux_gps', False):
-        gps_coords = get_termux_gps()
-        if gps_coords:
-            lat, lon = gps_coords
-        else:
-            log_message("WARNING: Failed to read GPS. Falling back to fixed coordinates.")
-            
-    if lat is None or lon is None:
-        lat = float(config.get('latitude', 0.0))
-        lon = float(config.get('longitude', 0.0))
+    lat = float(config.get('latitude', 0.0))
+    lon = float(config.get('longitude', 0.0))
         
     log_message(f"Beacon Location Info: Latitude={lat}, Longitude={lon}")
     

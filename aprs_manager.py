@@ -69,9 +69,8 @@ def gui_require_auth(parent=None):
     return False
 
 # Detect OS/Environment
-IS_ANDROID = os.path.exists('/data/data/com.termux') or 'TERMUX_VERSION' in os.environ
 IS_WINDOWS = sys.platform == 'win32'
-IS_LINUX = not IS_ANDROID and (sys.platform.startswith('linux') or sys.platform.startswith('freebsd'))
+IS_LINUX = sys.platform.startswith('linux') or sys.platform.startswith('freebsd')
 
 # Check GUI Libraries
 GUI_AVAILABLE = True
@@ -135,12 +134,6 @@ def is_profile_running(profile_name):
         cmd = f'Get-ScheduledTask -TaskName "APRSBeacon-{profile_name}" | Select-Object -ExpandProperty State'
         res = subprocess.run(['powershell', '-Command', cmd], capture_output=True, text=True)
         return res.stdout.strip() == 'Running'
-    elif IS_ANDROID:
-        try:
-            res = subprocess.run(['pgrep', '-f', f'aprs_beacon.py --profile {profile_name}'], capture_output=True, text=True)
-            return bool(res.stdout.strip())
-        except:
-            return False
     return False
 
 def is_service_enabled(profile_name):
@@ -188,19 +181,6 @@ def start_profile_service(profile_name):
             register_windows_task(profile_name)
         cmd = f'Start-ScheduledTask -TaskName "APRSBeacon-{profile_name}"'
         subprocess.run(['powershell', '-Command', cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    elif IS_ANDROID:
-        script_path = os.path.join(BASE_DIR, 'aprs_beacon.py')
-        cmd = f'termux-wake-lock; nohup {sys.executable or "python3"} {script_path} --profile {profile_name} >/dev/null 2>&1 &'
-        subprocess.run(cmd, shell=True)
-        boot_dir = os.path.expanduser('~/.termux/boot')
-        os.makedirs(boot_dir, exist_ok=True)
-        boot_script = os.path.join(boot_dir, f'aprs-beacon-{profile_name}')
-        with open(boot_script, 'w', encoding='utf-8') as f:
-            f.write(f'''#!/usr/bin/env bash
-termux-wake-lock
-nohup {sys.executable or "python3"} {script_path} --profile {profile_name} >/dev/null 2>&1 &
-''')
-        os.chmod(boot_script, 0o755)
 
 def stop_profile_service(profile_name):
     if IS_LINUX:
@@ -208,14 +188,6 @@ def stop_profile_service(profile_name):
     elif IS_WINDOWS:
         cmd = f'Stop-ScheduledTask -TaskName "APRSBeacon-{profile_name}"'
         subprocess.run(['powershell', '-Command', cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    elif IS_ANDROID:
-        subprocess.run(f'pkill -f "aprs_beacon.py --profile {profile_name}"', shell=True)
-        boot_script = os.path.expanduser(f'~/.termux/boot/aprs-beacon-{profile_name}')
-        if os.path.exists(boot_script):
-            try:
-                os.remove(boot_script)
-            except:
-                pass
 
 def register_windows_task(profile_name):
     python_path = sys.executable or 'python'
@@ -237,33 +209,76 @@ def remove_profile_service(profile_name):
         subprocess.run(['systemctl', '--user', 'disable', f'aprs-beacon@{profile_name}.service'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def self_update():
+    import urllib.request
+    import shutil
+    
     repo_path_file = os.path.join(BASE_DIR, '.repo_path')
-    if not os.path.exists(repo_path_file):
-        return False, "Error: Installation source directory (.repo_path) not found. Please run the setup script manually."
-    try:
-        with open(repo_path_file, 'r', encoding='utf-8') as f:
-            repo_path = f.read().strip()
-        if not os.path.exists(repo_path):
-            return False, f"Error: Source directory ({repo_path}) does not exist."
-        if not IS_WINDOWS:
-            res = subprocess.run(['git', 'pull'], cwd=repo_path, capture_output=True, text=True)
-            if res.returncode != 0:
-                return False, f"Git Pull Error:\n{res.stderr}"
-        else:
-            res = subprocess.run(['powershell', '-Command', 'git pull'], cwd=repo_path, capture_output=True, text=True)
-            if res.returncode != 0:
-                return False, f"Git Pull Error:\n{res.stderr}"
-        
-        stdout_lower = res.stdout.lower()
-        if "already up to date" in stdout_lower or "already up-to-date" in stdout_lower or "zaten güncel" in stdout_lower:
-            return True, "Already up-to-date."
+    has_git_repo = False
+    repo_path = ""
+    if os.path.exists(repo_path_file):
+        try:
+            with open(repo_path_file, 'r', encoding='utf-8') as f:
+                repo_path = f.read().strip()
+            if os.path.exists(repo_path) and os.path.exists(os.path.join(repo_path, '.git')):
+                has_git_repo = True
+        except:
+            pass
+
+    if has_git_repo:
+        try:
+            if not IS_WINDOWS:
+                res = subprocess.run(['git', 'pull'], cwd=repo_path, capture_output=True, text=True)
+                if res.returncode != 0:
+                    return False, f"Git Pull Error:\n{res.stderr}"
+            else:
+                res = subprocess.run(['powershell', '-Command', 'git pull'], cwd=repo_path, capture_output=True, text=True)
+                if res.returncode != 0:
+                    return False, f"Git Pull Error:\n{res.stderr}"
             
-        import shutil
-        shutil.copy2(os.path.join(repo_path, 'aprs_beacon.py'), os.path.join(BASE_DIR, 'aprs_beacon.py'))
-        shutil.copy2(os.path.join(repo_path, 'aprs_manager.py'), os.path.join(BASE_DIR, 'aprs_manager.py'))
-        return True, "Application updated successfully! Please close and reopen the app to apply changes."
-    except Exception as e:
-        return False, f"Update Error: {e}"
+            stdout_lower = res.stdout.lower()
+            if "already up to date" in stdout_lower or "already up-to-date" in stdout_lower or "zaten güncel" in stdout_lower:
+                return True, "Already up-to-date."
+                
+            shutil.copy2(os.path.join(repo_path, 'aprs_beacon.py'), os.path.join(BASE_DIR, 'aprs_beacon.py'))
+            shutil.copy2(os.path.join(repo_path, 'aprs_manager.py'), os.path.join(BASE_DIR, 'aprs_manager.py'))
+            return True, "Application updated successfully! Please close and reopen the app to apply changes."
+        except Exception as e:
+            return False, f"Update Error: {e}"
+    else:
+        # Update directly from GitHub
+        try:
+            beacon_url = "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
+            manager_url = "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_manager.py"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            
+            # Download new beacon
+            req = urllib.request.Request(beacon_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                beacon_code = response.read()
+                
+            # Download new manager
+            req = urllib.request.Request(manager_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                manager_code = response.read()
+            
+            if b"def " not in beacon_code or b"def " not in manager_code:
+                return False, "Failed to download updates: Invalid response content."
+            
+            beacon_path = os.path.join(BASE_DIR, 'aprs_beacon.py')
+            manager_path = os.path.join(BASE_DIR, 'aprs_manager.py')
+            
+            with open(beacon_path, 'wb') as f:
+                f.write(beacon_code)
+            with open(manager_path, 'wb') as f:
+                f.write(manager_code)
+                
+            if not IS_WINDOWS:
+                os.chmod(beacon_path, 0o755)
+                os.chmod(manager_path, 0o755)
+                
+            return True, "Application updated successfully from GitHub! Please close and reopen the app to apply changes."
+        except Exception as e:
+            return False, f"Update Error (GitHub): {e}"
 
 def export_settings(export_file_path):
     try:

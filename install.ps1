@@ -28,7 +28,13 @@ $logsDir = "$installDir\logs"
 if (!(Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null }
 if (!(Test-Path $profilesDir)) { New-Item -ItemType Directory -Force -Path $profilesDir | Out-Null }
 if (!(Test-Path $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
-$pwd.Path | Out-File -FilePath "$installDir\.repo_path" -Encoding utf8
+if ((Test-Path ".\aprs_beacon.py") -and (Test-Path ".\.git")) {
+    $pwd.Path | Out-File -FilePath "$installDir\.repo_path" -Encoding utf8
+} else {
+    if (Test-Path "$installDir\.repo_path") {
+        Remove-Item -Path "$installDir\.repo_path" -Force -ErrorAction SilentlyContinue
+    }
+}
 
 # GUI Bağımlılıkları Kurulumu (Windows için)
 Write-Host "[i] Görsel arayüz için kütüphaneler kontrol ediliyor (pystray, Pillow)..." -ForegroundColor Blue
@@ -203,16 +209,19 @@ $configJson = @"
 $configJson | Out-File -FilePath "$profilesDir\$profileName.json" -Encoding utf8
 Write-Host "`n[+] Yapılandırma dosyası kaydedildi: $profilesDir\$profileName.json" -ForegroundColor Green
 
-# Dosyaları kopyala
+# Dosyaları kopyala veya indir
 if (Test-Path ".\aprs_beacon.py") {
     Copy-Item -Path ".\aprs_beacon.py" -Destination "$installDir\aprs_beacon.py" -Force
 } else {
-    Write-Host "[!] Hata: Mevcut klasörde aprs_beacon.py bulunamadı!" -ForegroundColor Red
-    Exit
+    Write-Host "[i] aprs_beacon.py dosyası GitHub'dan indiriliyor..." -ForegroundColor Blue
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py" -OutFile "$installDir\aprs_beacon.py" -UseBasicParsing
 }
 
 if (Test-Path ".\aprs_manager.py") {
     Copy-Item -Path ".\aprs_manager.py" -Destination "$installDir\aprs_manager.py" -Force
+} else {
+    Write-Host "[i] aprs_manager.py dosyası GitHub'dan indiriliyor..." -ForegroundColor Blue
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_manager.py" -OutFile "$installDir\aprs_manager.py" -UseBasicParsing
 }
 
 # Geriye dönük uyumluluk (Eski tekli config varsa taşıyalım)
