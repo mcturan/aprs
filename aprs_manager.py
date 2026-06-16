@@ -1157,17 +1157,14 @@ class APRSManagerGUI:
             
         # Create Dropdown Menu
         options_menu = tk.Menu(self.root, tearoff=0, bg=self.c_card, fg=self.c_text_main, activebackground=self.c_accent_cyan, activeforeground="#ffffff", font=("Helvetica", 9))
+        options_menu.add_command(label="Add Profile", command=self.open_add_profile_dialog)
+        options_menu.add_separator()
         options_menu.add_command(label="Test APRS Server", command=self.trigger_server_test)
         options_menu.add_separator()
         options_menu.add_command(label="Import Settings", command=self.trigger_import)
         options_menu.add_command(label="Export Settings", command=self.trigger_export)
         options_menu.add_separator()
         options_menu.add_command(label="Update Application", command=self.trigger_self_update)
-        
-        # Add Profile Button (Primary Action)
-        add_btn = tk.Button(btn_container, text="+ Add Profile", bg=self.c_green, command=self.open_add_profile_dialog)
-        add_btn.pack(side="left", padx=4)
-        style_header_btn(add_btn, self.c_green, "#059669")
         
         # Menu Button (Utility Dropdown)
         options_btn = tk.Button(btn_container, text="Menu ▾", bg=self.c_btn_gray, command=show_options_menu)
@@ -1193,7 +1190,7 @@ class APRSManagerGUI:
         self.main_container.pack(fill="both", expand=True, padx=25, pady=(10, 20))
         
         # Welcome message (if no profiles)
-        self.welcome_label = tk.Label(self.main_container, text="No APRS profiles configured.\nClick '+ Add Profile' to create one.", 
+        self.welcome_label = tk.Label(self.main_container, text="No APRS profiles configured.\nSelect 'Add Profile' from the Menu to create one.", 
                                       font=("Helvetica", 11), fg=self.c_text_muted, bg=self.c_bg)
         
         # Scrollable Canvas container for Profiles list
