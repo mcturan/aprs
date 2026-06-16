@@ -1012,6 +1012,9 @@ class APRSManagerGUI:
         self.style.configure('.', background=self.c_bg, foreground=self.c_text_main)
         self.style.configure('TFrame', background=self.c_bg)
         self.style.configure('Vertical.TScrollbar', background=self.c_card, bordercolor=self.c_border, arrowcolor=self.c_text_main)
+        self.style.configure('TNotebook', background=self.c_bg, borderwidth=0)
+        self.style.configure('TNotebook.Tab', background=self.c_btn_gray, foreground=self.c_text_main, font=("Helvetica", 9, "bold"), padding=[12, 5])
+        self.style.map('TNotebook.Tab', background=[('selected', self.c_accent_cyan)], foreground=[('selected', '#ffffff')])
         
         # Set window icon
         self.icon_image = self.create_icon_image()
@@ -1189,13 +1192,25 @@ class APRSManagerGUI:
         self.main_container = tk.Frame(self.root, bg=self.c_bg)
         self.main_container.pack(fill="both", expand=True, padx=25, pady=(10, 20))
         
+        # Create Notebook for Tabs
+        self.notebook = ttk.Notebook(self.main_container)
+        self.notebook.pack(fill="both", expand=True)
+        
+        # Tab 1: Beacons list
+        self.tab_beacons = tk.Frame(self.notebook, bg=self.c_bg)
+        self.notebook.add(self.tab_beacons, text="  Beacons  ")
+        
+        # Tab 2: Map tracker
+        self.tab_map = tk.Frame(self.notebook, bg=self.c_bg)
+        self.notebook.add(self.tab_map, text="  APRS.fi Map  ")
+        
         # Welcome message (if no profiles)
-        self.welcome_label = tk.Label(self.main_container, text="No APRS profiles configured.\nSelect 'Add Profile' from the Menu to create one.", 
+        self.welcome_label = tk.Label(self.tab_beacons, text="No APRS profiles configured.\nSelect 'Add Profile' from the Menu to create one.", 
                                       font=("Helvetica", 11), fg=self.c_text_muted, bg=self.c_bg)
         
         # Scrollable Canvas container for Profiles list
-        self.canvas = tk.Canvas(self.main_container, bg=self.c_bg, highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self.main_container, orient="vertical", command=self.canvas.yview)
+        self.canvas = tk.Canvas(self.tab_beacons, bg=self.c_bg, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.tab_beacons, orient="vertical", command=self.canvas.yview)
         self.scrollable_frame = tk.Frame(self.canvas, bg=self.c_bg)
         
         self.scrollable_frame.bind(
@@ -1215,6 +1230,34 @@ class APRSManagerGUI:
         
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+        
+        # Configure Tab 2 (Map Tracker)
+        map_ctrl = tk.Frame(self.tab_map, bg=self.c_card, bd=0, highlightthickness=1, highlightbackground=self.c_border, padx=15, pady=10)
+        map_ctrl.pack(fill="x", side="top", pady=(0, 10))
+        
+        tk.Label(map_ctrl, text="Select Station Profile:", font=("Helvetica", 9, "bold"), fg=self.c_text_muted, bg=self.c_card).pack(side="left", padx=(0, 10))
+        
+        self.map_profile_var = tk.StringVar()
+        self.map_profile_menu = ttk.OptionMenu(map_ctrl, self.map_profile_var, "", command=self.on_map_profile_change)
+        self.map_profile_menu.pack(side="left", padx=5)
+        self.map_profile_menu.configure(width=15)
+        
+        # Open in Browser button
+        self.map_browser_btn = tk.Button(map_ctrl, text="Open aprs.fi Map ↗", bg=self.c_accent_cyan, fg="#ffffff", activeforeground="#ffffff",
+                                         relief="flat", bd=0, highlightthickness=0, font=("Helvetica", 9, "bold"), padx=12, pady=5,
+                                         command=self.open_current_map_in_browser)
+        self.map_browser_btn.pack(side="right", padx=5)
+        self.map_browser_btn.bind("<Enter>", lambda e: self.map_browser_btn.configure(bg="#1d4ed8"))
+        self.map_browser_btn.bind("<Leave>", lambda e: self.map_browser_btn.configure(bg=self.c_accent_cyan))
+        
+        # Map Display Area
+        self.map_display_frame = tk.Frame(self.tab_map, bg="#ffffff", bd=0, highlightthickness=1, highlightbackground=self.c_border)
+        self.map_display_frame.pack(fill="both", expand=True)
+        
+        self.map_img_lbl = tk.Label(self.map_display_frame, text="Select a profile to load map", font=("Helvetica", 11), fg=self.c_text_muted, bg="#ffffff")
+        self.map_img_lbl.pack(fill="both", expand=True)
+        
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
         
         # Footer Frame
         footer_frame = tk.Frame(self.root, bg=self.c_bg)
@@ -1237,6 +1280,8 @@ class APRSManagerGUI:
             if self._hold_job:
                 self.root.after_cancel(self._hold_job)
                 self._hold_job = None
+                # Open QRZ profile in browser
+                webbrowser.open("https://www.qrz.com/db/TA1XTA")
         def on_leave(event):
             if self._hold_job:
                 self.root.after_cancel(self._hold_job)
@@ -1263,6 +1308,84 @@ class APRSManagerGUI:
                 self.refresh_profiles()
             else:
                 messagebox.showerror("Error", "Invalid passcode.")
+
+    def on_tab_changed(self, event):
+        selected_tab = self.notebook.index(self.notebook.select())
+        if selected_tab == 1: # Map Tab
+            self.update_map_view()
+
+    def on_map_profile_change(self, profile_name):
+        self.update_map_view()
+        
+    def update_map_view(self):
+        profile_name = self.map_profile_var.get()
+        if not profile_name:
+            self.map_img_lbl.configure(image="", text="No profile configured to display map.")
+            return
+            
+        profiles = get_profiles()
+        if profile_name not in profiles:
+            return
+            
+        data = profiles[profile_name]
+        lat = data.get('latitude')
+        lon = data.get('longitude')
+        
+        if lat is None or lon is None:
+            self.map_img_lbl.configure(image="", text="Selected profile does not contain coordinate data.")
+            return
+            
+        self.map_img_lbl.configure(image="", text="Loading map from APRS data...")
+        
+        def loader():
+            img_data = self.load_static_map_data(lat, lon)
+            if img_data:
+                self.root.after(0, lambda: self.display_map_image(img_data))
+            else:
+                self.root.after(0, lambda: self.map_img_lbl.configure(image="", text="Failed to download map preview.\nCheck internet connection or click 'Open aprs.fi Map' above."))
+                
+        threading.Thread(target=loader, daemon=True).start()
+
+    def load_static_map_data(self, lat, lon):
+        import urllib.request
+        import base64
+        from io import BytesIO
+        
+        url = f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&z=13&l=map&size=650,380&pt={lon},{lat},pm2rdm"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as response:
+                img_data = response.read()
+            
+            img = Image.open(BytesIO(img_data))
+            out_bytes = BytesIO()
+            img.save(out_bytes, format="PNG")
+            return base64.b64encode(out_bytes.getvalue())
+        except Exception as e:
+            print(f"Map download error: {e}")
+            return None
+
+    def display_map_image(self, img_data):
+        try:
+            self.map_img = tk.PhotoImage(data=img_data)
+            self.map_img_lbl.configure(image=self.map_img, text="")
+        except Exception as e:
+            self.map_img_lbl.configure(image="", text=f"Error rendering map: {e}")
+
+    def open_current_map_in_browser(self):
+        profile_name = self.map_profile_var.get()
+        if not profile_name:
+            webbrowser.open("https://aprs.fi")
+            return
+            
+        profiles = get_profiles()
+        if profile_name in profiles:
+            callsign = profiles[profile_name].get('callsign')
+            if callsign:
+                webbrowser.open(f"https://aprs.fi/#!call=a%2F{callsign}")
+                return
+        webbrowser.open("https://aprs.fi")
 
     def refresh_profiles(self, force_rebuild=False):
         profiles = get_profiles()
@@ -1344,6 +1467,21 @@ class APRSManagerGUI:
         self.update_logs_display()
         # Manage background chat listeners based on running profiles
         self.manage_chat_listeners_states(profiles)
+        
+        # Update map profile menu dropdown options
+        try:
+            profile_names = list(profiles.keys())
+            menu = self.map_profile_menu["menu"]
+            menu.delete(0, "end")
+            if profile_names:
+                for name in profile_names:
+                    menu.add_command(label=name, command=lambda n=name: [self.map_profile_var.set(n), self.on_map_profile_change(n)])
+                if not self.map_profile_var.get() or self.map_profile_var.get() not in profile_names:
+                    self.map_profile_var.set(profile_names[0])
+            else:
+                self.map_profile_var.set("")
+        except:
+            pass
 
     def create_profile_card(self, name, data, idx):
         running = is_profile_running(name)
