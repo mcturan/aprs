@@ -77,7 +77,7 @@ GUI_AVAILABLE = True
 try:
     import tkinter as tk
     from tkinter import ttk, messagebox, simpledialog, filedialog
-    from PIL import Image, ImageDraw, ImageTk
+    from PIL import Image, ImageDraw
     import pystray
 except ImportError:
     GUI_AVAILABLE = False
@@ -935,8 +935,18 @@ class APRSManagerGUI:
         
         # Logo Label
         try:
-            logo_img = self.icon_image.resize((44, 44), Image.Resampling.LANCZOS)
-            self.header_logo_photo = ImageTk.PhotoImage(logo_img)
+            import io
+            import base64
+            resample_filter = getattr(Image, 'LANCZOS', getattr(Image, 'ANTIALIAS', 1))
+            if hasattr(Image, 'Resampling'):
+                resample_filter = Image.Resampling.LANCZOS
+            
+            logo_img = self.icon_image.resize((44, 44), resample_filter)
+            buffered = io.BytesIO()
+            logo_img.save(buffered, format="PNG")
+            logo_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            self.header_logo_photo = tk.PhotoImage(data=logo_data)
             logo_lbl = tk.Label(logo_title_frame, image=self.header_logo_photo, bg=self.c_card)
             logo_lbl.pack(side="left", padx=(0, 10))
         except:
