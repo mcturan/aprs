@@ -972,30 +972,30 @@ class APRSManagerGUI:
             btn.bind("<Enter>", lambda e: btn.configure(bg=color_hover))
             btn.bind("<Leave>", lambda e: btn.configure(bg=color_main))
             
-        # Add Profile Button
+        # Options Dropdown Menu Click Handler
+        def show_options_menu():
+            x = options_btn.winfo_rootx()
+            y = options_btn.winfo_rooty() + options_btn.winfo_height()
+            options_menu.post(x, y)
+            
+        # Create Dropdown Menu
+        options_menu = tk.Menu(self.root, tearoff=0, bg=self.c_card, fg=self.c_text_main, activebackground=self.c_accent_cyan, activeforeground="#ffffff", font=("Helvetica", 9))
+        options_menu.add_command(label="Test APRS Server", command=self.trigger_server_test)
+        options_menu.add_separator()
+        options_menu.add_command(label="Import Settings", command=self.trigger_import)
+        options_menu.add_command(label="Export Settings", command=self.trigger_export)
+        options_menu.add_separator()
+        options_menu.add_command(label="Update Application", command=self.trigger_self_update)
+        
+        # Add Profile Button (Primary Action)
         add_btn = tk.Button(btn_container, text="+ Add Profile", bg=self.c_green, command=self.open_add_profile_dialog)
         add_btn.pack(side="left", padx=4)
         style_header_btn(add_btn, self.c_green, "#059669")
         
-        # Test Server Button
-        test_btn = tk.Button(btn_container, text="Test server", bg="#3b82f6", command=self.trigger_server_test)
-        test_btn.pack(side="left", padx=4)
-        style_header_btn(test_btn, "#3b82f6", "#2563eb")
-        
-        # Import settings Button
-        import_btn = tk.Button(btn_container, text="Import Settings", bg=self.c_btn_gray, command=self.trigger_import)
-        import_btn.pack(side="left", padx=4)
-        style_header_btn(import_btn, self.c_btn_gray, "#cbd5e1", "#334155")
-        
-        # Export settings Button
-        export_btn = tk.Button(btn_container, text="Export Settings", bg=self.c_btn_gray, command=self.trigger_export)
-        export_btn.pack(side="left", padx=4)
-        style_header_btn(export_btn, self.c_btn_gray, "#cbd5e1", "#334155")
-        
-        # Update App Button
-        update_btn = tk.Button(btn_container, text="Update App", bg="#ea580c", command=self.trigger_self_update)
-        update_btn.pack(side="left", padx=4)
-        style_header_btn(update_btn, "#ea580c", "#c2410c")
+        # Menu Button (Utility Dropdown)
+        options_btn = tk.Button(btn_container, text="Menu ▾", bg=self.c_btn_gray, command=show_options_menu)
+        options_btn.pack(side="left", padx=4)
+        style_header_btn(options_btn, self.c_btn_gray, "#cbd5e1", "#334155")
         
         # Stats Dashboard Banner
         self.stats_frame = tk.Frame(self.root, bg=self.c_bg, height=45)
