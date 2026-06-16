@@ -272,19 +272,26 @@ def get_callsign_coordinates(callsign):
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             html = response.read().decode('utf-8', errors='ignore')
+            
+            # Pattern 1: LatLng(41.02833, 28.977) from gmap4.cgi / embedded scripts
+            match = re.search(r'LatLng\((-?\d+\.\d+),\s*(-?\d+\.\d+)\)', html)
+            if match:
+                return float(match.group(1)), float(match.group(2))
+                
+            # Pattern 2: C=41.02833%2c28.977 from MSN MapBlast link
+            match = re.search(r'[Cc]=(-?\d+\.\d+)%2[cC](-?\d+\.\d+)', html)
+            if match:
+                return float(match.group(1)), float(match.group(2))
+                
+            # Pattern 3: Old APRS format (fallback)
             match = re.search(r'(\d{2})(\d{2}\.\d{2})([NS])[\\/](\d{3})(\d{2}\.\d{2})([EW])', html)
             if match:
                 groups = match.groups()
                 lat_deg, lat_min, lat_dir, lon_deg, lon_min, lon_dir = groups
-                
                 lat = float(lat_deg) + float(lat_min) / 60.0
-                if lat_dir == 'S':
-                    lat = -lat
-                    
+                if lat_dir == 'S': lat = -lat
                 lon = float(lon_deg) + float(lon_min) / 60.0
-                if lon_dir == 'W':
-                    lon = -lon
-                    
+                if lon_dir == 'W': lon = -lon
                 return lat, lon
     except:
         pass
@@ -322,6 +329,7 @@ def stitch_osm_map(lat, lon, zoom, width=720, height=420):
     canvas = Image.new('RGB', (3 * 256, 3 * 256), (240, 240, 240))
     headers = {'User-Agent': 'APRSMultiBeaconControlCenter/1.3.0 (turan@mcturan.org)'}
     
+    downloaded_count = 0
     for i in range(3):
         for j in range(3):
             tx = tx_start + i
@@ -337,9 +345,13 @@ def stitch_osm_map(lat, lon, zoom, width=720, height=420):
                     tile_data = r.read()
                 tile_img = Image.open(BytesIO(tile_data))
                 canvas.paste(tile_img, (i * 256, j * 256))
+                downloaded_count += 1
             except Exception as e:
                 print(f"Failed to download tile {zoom}/{tx}/{ty}: {e}")
                 
+    if downloaded_count == 0:
+        raise RuntimeError("No map tiles could be downloaded.")
+        
     center_x = (cx - tx_start) * 256
     center_y = (cy - ty_start) * 256
     
