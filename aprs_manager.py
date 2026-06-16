@@ -77,7 +77,7 @@ GUI_AVAILABLE = True
 try:
     import tkinter as tk
     from tkinter import ttk, messagebox, simpledialog, filedialog
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageTk
     import pystray
 except ImportError:
     GUI_AVAILABLE = False
@@ -929,15 +929,28 @@ class APRSManagerGUI:
         header_frame.pack(fill="x", side="top")
         header_frame.pack_propagate(False)
         
-        # Title Container
-        title_container = tk.Frame(header_frame, bg=self.c_card)
-        title_container.pack(side="left", padx=25, pady=15)
+        # Logo and Title Container
+        logo_title_frame = tk.Frame(header_frame, bg=self.c_card)
+        logo_title_frame.pack(side="left", padx=25, pady=15)
         
-        title_lbl = tk.Label(title_container, text="APRS MULTI-BEACON CONTROL CENTER", font=("Helvetica", 14, "bold"), fg=self.c_text_main, bg=self.c_card)
+        # Logo Label
+        try:
+            logo_img = self.icon_image.resize((44, 44), Image.Resampling.LANCZOS)
+            self.header_logo_photo = ImageTk.PhotoImage(logo_img)
+            logo_lbl = tk.Label(logo_title_frame, image=self.header_logo_photo, bg=self.c_card)
+            logo_lbl.pack(side="left", padx=(0, 10))
+        except:
+            pass
+            
+        # Title Container
+        title_container = tk.Frame(logo_title_frame, bg=self.c_card)
+        title_container.pack(side="left")
+        
+        title_lbl = tk.Label(title_container, text="APRS MULTI-BEACON CONTROL CENTER", font=("Helvetica", 11, "bold"), fg=self.c_text_main, bg=self.c_card)
         title_lbl.pack(anchor="w")
         
-        subtitle_lbl = tk.Label(title_container, text="Real-Time Profile & Daemon Management", font=("Helvetica", 9), fg=self.c_text_muted, bg=self.c_card)
-        subtitle_lbl.pack(anchor="w", pady=(2, 0))
+        subtitle_lbl = tk.Label(title_container, text="Real-Time Profile & Daemon Management", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_card)
+        subtitle_lbl.pack(anchor="w", pady=(1, 0))
         
         # Action Buttons Container in Header
         btn_container = tk.Frame(header_frame, bg=self.c_card)
