@@ -77,33 +77,42 @@ def send_aprs_raw_packet(config, packet):
     if not passcode:
         passcode = generate_aprs_passcode(callsign)
     
-    server = config.get('server', 'rotate.aprs2.net')
+    primary_server = config.get('server', 'rotate.aprs2.net')
     port = int(config.get('port', 14580))
     
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(15)
-        s.connect((server, port))
-        
-        greeting = s.recv(1024).decode('utf-8', errors='ignore').strip()
-        
-        login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
-        s.sendall(login_str.encode('utf-8'))
-        
-        response = s.recv(1024).decode('utf-8', errors='ignore').strip()
-        
-        if "verified" not in response.lower() and "unverified" in response.lower():
-            log_message("WARNING: Authentication unverified! Please double-check your passcode and callsign.")
+    servers_to_try = [primary_server]
+    backup_servers = ['euro.aprs2.net', 'noam.aprs2.net', 'asia.aprs2.net']
+    for b_srv in backup_servers:
+        if b_srv != primary_server:
+            servers_to_try.append(b_srv)
             
-        log_message(f"Sending APRS Packet: {packet}")
-        s.sendall(f"{packet}\r\n".encode('utf-8'))
-        
-        time.sleep(2)
-        s.close()
-        return True
-    except Exception as e:
-        log_message(f"ERROR: Failed to send packet: {e}")
-        return False
+    for server in servers_to_try:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(10)
+            s.connect((server, port))
+            
+            greeting = s.recv(1024).decode('utf-8', errors='ignore').strip()
+            
+            login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
+            s.sendall(login_str.encode('utf-8'))
+            
+            response = s.recv(1024).decode('utf-8', errors='ignore').strip()
+            
+            if "verified" not in response.lower() and "unverified" in response.lower():
+                log_message("WARNING: Authentication unverified! Please double-check your passcode and callsign.")
+                
+            log_message(f"Sending APRS Packet: {packet} via {server}")
+            s.sendall(f"{packet}\r\n".encode('utf-8'))
+            
+            time.sleep(2)
+            s.close()
+            return True
+        except Exception as e:
+            log_message(f"ERROR: Failed to send packet via {server}: {e}. Trying backup server if available...")
+            
+    log_message("ERROR: All APRS servers are unreachable.")
+    return False
 
 def send_aprs_thursday_sequence(config, today_str):
     callsign = config['callsign'].upper()

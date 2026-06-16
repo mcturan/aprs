@@ -605,13 +605,15 @@ class APRSChatWindow(tk.Toplevel):
             return
             
         self.active_profile = default_profile_name or list(self.profiles.keys())[0]
-        
-        self.socket_listener = None
-        self.listener_running = False
-        self.socket_thread = None
+        self.parent.active_chat_ui = self
         
         self.build_ui()
-        self.start_listener()
+        
+        # Ensure chat listener is running for this profile
+        if self.active_profile not in self.parent.chat_listeners:
+            self.parent.start_bg_chat_listener(self.active_profile)
+            
+        self.load_history_for_peer()
         
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         
@@ -641,9 +643,12 @@ class APRSChatWindow(tk.Toplevel):
         self.to_entry.insert(0, "SMSGTE") # Default to SMS gateway
         
         def to_focus_in(e): self.to_entry.configure(highlightbackground=self.c_accent)
-        def to_focus_out(e): self.to_entry.configure(highlightbackground=self.c_border)
+        def to_focus_out(e): 
+            self.to_entry.configure(highlightbackground=self.c_border)
+            self.load_history_for_peer()
         self.to_entry.bind("<FocusIn>", to_focus_in)
         self.to_entry.bind("<FocusOut>", to_focus_out)
+        self.to_entry.bind("<Return>", lambda e: self.load_history_for_peer())
         
         # Chat History Panel
         chat_frame = tk.Frame(self, bg=self.c_bg)
@@ -691,90 +696,48 @@ class APRSChatWindow(tk.Toplevel):
         self.send_btn.bind("<Leave>", lambda e: self.send_btn.configure(bg=self.c_green))
 
     def on_profile_change(self, profile_name):
+        prev_profile = self.active_profile
         self.active_profile = profile_name
-        self.start_listener()
         
-    def start_listener(self):
-        self.stop_listener()
-        if not self.active_profile or self.active_profile not in self.profiles:
+        # Stop background listener of previous profile ONLY IF it's not actually running in background
+        if not is_profile_running(prev_profile) and prev_profile in self.parent.chat_listeners:
+            self.parent.stop_bg_chat_listener(prev_profile)
+            
+        # Start new background listener if it isn't running
+        if self.active_profile not in self.parent.chat_listeners:
+            self.parent.start_bg_chat_listener(self.active_profile)
+            
+        self.load_history_for_peer()
+        
+    def load_history_for_peer(self):
+        peer = self.to_entry.get().strip().upper()
+        if not peer:
             return
             
-        data = self.profiles[self.active_profile]
-        callsign = data.get('callsign', '').upper()
-        passcode = data.get('passcode')
-        if not passcode:
-            passcode = generate_aprs_passcode(callsign)
-            
-        self.listener_running = True
-        self.socket_thread = threading.Thread(
-            target=self.listener_worker,
-            args=(callsign, passcode),
-            daemon=True
-        )
-        self.socket_thread.start()
+        self.chat_area.configure(state="normal")
+        self.chat_area.delete("1.0", tk.END)
+        self.chat_area.configure(state="disabled")
         
-    def stop_listener(self):
-        self.listener_running = False
-        if self.socket_listener:
-            try:
-                self.socket_listener.close()
-            except:
-                pass
-            self.socket_listener = None
+        messages = self.parent.load_chat_messages(self.active_profile, peer)
+        self.chat_area.configure(state="normal")
+        for msg in messages:
+            sender = msg.get('sender')
+            text = msg.get('text')
+            timestamp = msg.get('timestamp', '').split(' ')[-1] # get just HH:MM:SS
+            
+            if sender == "SYSTEM":
+                self.chat_area.insert(tk.END, f"[{timestamp}] SYSTEM: {text}\n", "system")
+            elif sender == "YOU":
+                self.chat_area.insert(tk.END, f"[{timestamp}] YOU: {text}\n", "sent")
+            else:
+                self.chat_area.insert(tk.END, f"[{timestamp}] <{sender}> {text}\n", "received")
+        self.chat_area.see(tk.END)
+        self.chat_area.configure(state="disabled")
+        
+    def append_incoming_message(self, sender, text):
+        # Called from background thread, update GUI on main thread
+        self.after(0, lambda: self.append_message(sender, text))
 
-    def listener_worker(self, callsign, passcode):
-        server = "rotate.aprs2.net"
-        port = 14580
-        try:
-            self.socket_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket_listener.settimeout(8.0)
-            self.socket_listener.connect((server, port))
-            
-            # Read greeting
-            self.socket_listener.recv(1024)
-            
-            # Login
-            login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
-            self.socket_listener.sendall(login_str.encode('utf-8'))
-            self.socket_listener.recv(1024)
-            
-            self.append_message("SYSTEM", f"Connected as {callsign}. Real-time chat enabled.")
-            
-            self.socket_listener.settimeout(None)
-            buffer = ""
-            while self.listener_running:
-                data = self.socket_listener.recv(4096)
-                if not data:
-                    break
-                buffer += data.decode('utf-8', errors='ignore')
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    self.parse_and_display_packet(line, callsign)
-        except Exception as e:
-            if self.listener_running:
-                self.append_message("SYSTEM", f"Connection lost: {e}")
-                
-    def parse_and_display_packet(self, line, my_callsign):
-        if "::" in line:
-            try:
-                parts = line.split("::", 1)
-                header = parts[0]
-                payload = parts[1]
-                
-                sender = header.split(">", 1)[0].strip()
-                if ":" in payload:
-                    recipient_part, msg_text = payload.split(":", 1)
-                    recipient = recipient_part.strip()
-                    msg_text = msg_text.strip()
-                    
-                    if recipient == my_callsign:
-                        self.append_message(sender, msg_text)
-            except:
-                pass
-                
     def append_message(self, sender, text):
         if not self.winfo_exists():
             return
@@ -798,6 +761,8 @@ class APRSChatWindow(tk.Toplevel):
             return
         data = self.profiles[self.active_profile]
         from_callsign = data.get('callsign', '').upper()
+        
+        # Determine passcode
         passcode = data.get('passcode')
         if not passcode:
             passcode = generate_aprs_passcode(from_callsign)
@@ -814,14 +779,19 @@ class APRSChatWindow(tk.Toplevel):
     def on_send_complete(self, success, to_callsign, msg_text, res_msg):
         self.send_btn.configure(state="normal")
         if success:
-            self.append_message("YOU", f"To {to_callsign}: {msg_text}")
+            self.append_message("YOU", msg_text)
             self.msg_entry.delete(0, tk.END)
             self.char_lbl.configure(text="0/67")
+            # Save sent message to history
+            self.parent.save_chat_message(self.active_profile, "YOU", msg_text, to_callsign)
         else:
             messagebox.showerror("Error", res_msg, parent=self)
             
     def on_close(self):
-        self.stop_listener()
+        self.parent.active_chat_ui = None
+        # Clean up chat listener if the profile isn't running in background
+        if not is_profile_running(self.active_profile) and self.active_profile in self.parent.chat_listeners:
+            self.parent.stop_bg_chat_listener(self.active_profile)
         self.grab_release()
         self.destroy()
 
@@ -849,6 +819,8 @@ class APRSManagerGUI:
         
         # Dictionary of references to profile card widgets to update dynamically (flicker-free)
         self.profile_cards = {}
+        self.chat_listeners = {}
+        self.active_chat_ui = None
         
         # Initialize connection status variable
         self.server_status = "Checking connection..."
@@ -1123,6 +1095,8 @@ class APRSManagerGUI:
                     
         # Update logs on all cards immediately
         self.update_logs_display()
+        # Manage background chat listeners based on running profiles
+        self.manage_chat_listeners_states(profiles)
 
     def create_profile_card(self, name, data, idx):
         running = is_profile_running(name)
@@ -1660,6 +1634,188 @@ class APRSManagerGUI:
             return
         self.update_logs_display()
         self.root.after(3000, self.update_card_logs_loop)
+
+    def get_chat_filepath(self, profile_name, peer_callsign):
+        chats_dir = os.path.join(BASE_DIR, 'chats', profile_name)
+        os.makedirs(chats_dir, exist_ok=True)
+        return os.path.join(chats_dir, f"{peer_callsign.upper()}.json")
+        
+    def save_chat_message(self, profile_name, sender, text, peer_callsign=None):
+        if sender == "YOU":
+            peer = peer_callsign.upper()
+        else:
+            peer = sender.upper()
+            
+        filepath = self.get_chat_filepath(profile_name, peer)
+        messages = []
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    messages = json.load(f)
+            except:
+                pass
+                
+        messages.append({
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "sender": sender,
+            "text": text
+        })
+        
+        messages = messages[-100:]
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(messages, f, indent=4)
+        except:
+            pass
+            
+    def load_chat_messages(self, profile_name, peer_callsign):
+        filepath = self.get_chat_filepath(profile_name, peer_callsign)
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except:
+                pass
+        return []
+
+    def manage_chat_listeners_states(self, profiles):
+        for name in list(profiles.keys()):
+            running = is_profile_running(name)
+            if running and name not in self.chat_listeners:
+                self.start_bg_chat_listener(name)
+            elif not running and name in self.chat_listeners:
+                if not (hasattr(self, 'active_chat_ui') and self.active_chat_ui and self.active_chat_ui.winfo_exists() and self.active_chat_ui.active_profile == name):
+                    self.stop_bg_chat_listener(name)
+
+    def start_bg_chat_listener(self, profile_name):
+        if profile_name in self.chat_listeners:
+            return
+        profiles = get_profiles()
+        if profile_name not in profiles:
+            return
+        data = profiles[profile_name]
+        callsign = data.get('callsign', '').upper()
+        passcode = data.get('passcode')
+        if not passcode:
+            passcode = generate_aprs_passcode(callsign)
+            
+        self.chat_listeners[profile_name] = {
+            'running': True,
+            'socket': None,
+            'thread': None
+        }
+        
+        thread = threading.Thread(
+            target=self.bg_chat_listener_worker,
+            args=(profile_name, callsign, passcode),
+            daemon=True
+        )
+        self.chat_listeners[profile_name]['thread'] = thread
+        thread.start()
+        
+    def stop_bg_chat_listener(self, profile_name):
+        if profile_name in self.chat_listeners:
+            self.chat_listeners[profile_name]['running'] = False
+            sock = self.chat_listeners[profile_name]['socket']
+            if sock:
+                try:
+                    sock.close()
+                except:
+                    pass
+            del self.chat_listeners[profile_name]
+
+    def bg_chat_listener_worker(self, profile_name, callsign, passcode):
+        primary_server = "rotate.aprs2.net"
+        port = 14580
+        servers_to_try = [primary_server, 'euro.aprs2.net', 'noam.aprs2.net', 'asia.aprs2.net']
+        
+        connected = False
+        sock = None
+        
+        for server in servers_to_try:
+            if not self.chat_listeners.get(profile_name, {}).get('running', False):
+                return
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(8.0)
+                sock.connect((server, port))
+                self.chat_listeners[profile_name]['socket'] = sock
+                connected = True
+                break
+            except:
+                continue
+                
+        if not connected or not sock:
+            self.root.after(30000, lambda: self.start_bg_chat_listener(profile_name) if profile_name not in self.chat_listeners else None)
+            return
+            
+        try:
+            sock.recv(1024)
+            login_str = f"user {callsign} pass {passcode} vers PyAPRSBeacon 1.0 filter b/{callsign}\r\n"
+            sock.sendall(login_str.encode('utf-8'))
+            sock.recv(1024)
+            
+            sock.settimeout(None)
+            buffer = ""
+            while self.chat_listeners.get(profile_name, {}).get('running', False):
+                data = sock.recv(4096)
+                if not data:
+                    break
+                buffer += data.decode('utf-8', errors='ignore')
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    if "::" in line:
+                        try:
+                            parts = line.split("::", 1)
+                            header = parts[0]
+                            payload = parts[1]
+                            
+                            sender = header.split(">", 1)[0].strip()
+                            if ":" in payload:
+                                recipient_part, msg_text = payload.split(":", 1)
+                                recipient = recipient_part.strip()
+                                msg_text = msg_text.strip()
+                                
+                                if recipient == callsign:
+                                    msg_id = ""
+                                    if "{" in msg_text:
+                                        p_parts = msg_text.rsplit("{", 1)
+                                        if len(p_parts) == 2 and p_parts[1].isalnum():
+                                            msg_text = p_parts[0].strip()
+                                            msg_id = p_parts[1]
+                                            
+                                    if msg_id:
+                                        sender_padded = f"{sender:<9}"
+                                        ack_packet = f"{callsign}>APRS,TCPIP*::{sender_padded}:ack{msg_id}\r\n"
+                                        try:
+                                            sock.sendall(ack_packet.encode('utf-8'))
+                                        except:
+                                            pass
+                                            
+                                    self.save_chat_message(profile_name, sender, msg_text)
+                                    
+                                    if hasattr(self, 'active_chat_ui') and self.active_chat_ui and self.active_chat_ui.winfo_exists() and self.active_chat_ui.active_profile == profile_name and self.active_chat_ui.to_entry.get().strip().upper() == sender.upper():
+                                        self.active_chat_ui.append_incoming_message(sender, msg_text)
+                                    else:
+                                        if self.tray_icon:
+                                            disp_text = msg_text[:40] + "..." if len(msg_text) > 40 else msg_text
+                                            self.tray_icon.notify(f"From {sender}: {disp_text}", f"APRS Message ({profile_name})")
+                        except:
+                            pass
+        except:
+            pass
+        finally:
+            try:
+                sock.close()
+            except:
+                pass
+            if profile_name in self.chat_listeners:
+                del self.chat_listeners[profile_name]
+                self.root.after(10000, lambda: self.start_bg_chat_listener(profile_name))
 
     def gateway_ping_loop(self):
         while self.running:
