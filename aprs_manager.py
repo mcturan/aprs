@@ -21,6 +21,7 @@ os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Security & Auth Configurations
+VERSION = "v1.2.0"
 CURRENT_USER = getpass.getuser()
 IS_BYPASS = (CURRENT_USER == 'turan')
 
@@ -1048,7 +1049,7 @@ class APRSManagerGUI:
         # Footer Frame
         footer_frame = tk.Frame(self.root, bg=self.c_bg)
         footer_frame.pack(side="bottom", fill="x", pady=(5, 10))
-        footer_lbl = tk.Label(footer_frame, text="APRS Multi-Beacon Control Center  |  by TA1XTA", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg)
+        footer_lbl = tk.Label(footer_frame, text=f"APRS Multi-Beacon Control Center  |  {VERSION}  |  by TA1XTA", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg)
         footer_lbl.pack(anchor="center")
 
     def refresh_profiles(self, force_rebuild=False):
