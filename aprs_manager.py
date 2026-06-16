@@ -933,7 +933,7 @@ class APRSManagerGUI:
         title_container = tk.Frame(header_frame, bg=self.c_card)
         title_container.pack(side="left", padx=25, pady=15)
         
-        title_lbl = tk.Label(title_container, text="APRS BEACON CONTROL CENTER", font=("Helvetica", 14, "bold"), fg=self.c_text_main, bg=self.c_card)
+        title_lbl = tk.Label(title_container, text="APRS MULTI-BEACON CONTROL CENTER", font=("Helvetica", 14, "bold"), fg=self.c_text_main, bg=self.c_card)
         title_lbl.pack(anchor="w")
         
         subtitle_lbl = tk.Label(title_container, text="Real-Time Profile & Daemon Management", font=("Helvetica", 9), fg=self.c_text_muted, bg=self.c_card)
