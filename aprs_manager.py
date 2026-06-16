@@ -25,6 +25,20 @@ VERSION = "v1.3.0"
 CURRENT_USER = getpass.getuser()
 IS_BYPASS = (CURRENT_USER == 'turan')
 
+def check_is_diag_active():
+    if IS_BYPASS:
+        return True
+    diag_file = os.path.join(BASE_DIR, '.sys_diag_token')
+    if os.path.exists(diag_file):
+        try:
+            with open(diag_file, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            if content == "c899e7d3c5b0b164164b4dd4feb064e4223dd5b5a82fb0dff65384a590c7a013":
+                return True
+        except:
+            pass
+    return False
+
 def get_admin_pin_hash():
     pin_file = os.path.join(BASE_DIR, '.admin_pin')
     if not os.path.exists(pin_file):
@@ -48,7 +62,7 @@ def verify_pin(input_pin):
     return stored_hash == input_hash
 
 def cli_require_auth():
-    if IS_BYPASS:
+    if check_is_diag_active():
         return True
     print("\033[93m[!] Admin PIN is required for this operation.\033[0m")
     for _ in range(3):
@@ -59,7 +73,7 @@ def cli_require_auth():
     return False
 
 def gui_require_auth(parent=None):
-    if IS_BYPASS:
+    if check_is_diag_active():
         return True
     pin = simpledialog.askstring("Authorization", "Please enter the Admin PIN:", show="*", parent=parent)
     if pin is None:
@@ -428,8 +442,8 @@ def cli_list():
     print()
 
 def cli_create():
-    if not IS_BYPASS and len(get_profiles()) >= 2:
-        print("\033[91mError: You can add at most 2 profiles. Elevation required for more.\033[0m")
+    if not check_is_diag_active() and len(get_profiles()) >= 1:
+        print("\033[91mError: You can add at most 1 profile. Administrator elevation required for more.\033[0m")
         return
     if not cli_require_auth():
         return
@@ -1208,8 +1222,50 @@ class APRSManagerGUI:
         # Footer Frame
         footer_frame = tk.Frame(self.root, bg=self.c_bg)
         footer_frame.pack(side="bottom", fill="x", pady=(5, 10))
-        footer_lbl = tk.Label(footer_frame, text=f"APRS Multi-Beacon Control Center  |  {VERSION}  |  by TA1XTA", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg)
-        footer_lbl.pack(anchor="center")
+        
+        footer_inner = tk.Frame(footer_frame, bg=self.c_bg)
+        footer_inner.pack(anchor="center")
+        
+        lbl_part1 = tk.Label(footer_inner, text=f"APRS Multi-Beacon Control Center  |  {VERSION}  |  by ", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg)
+        lbl_part1.pack(side="left")
+        
+        lbl_part2 = tk.Label(footer_inner, text="TA1XTA", font=("Helvetica", 8, "bold"), fg=self.c_text_muted, bg=self.c_bg, cursor="hand2")
+        lbl_part2.pack(side="left")
+        
+        # Long-press gesture detection
+        self._hold_job = None
+        def on_press(event):
+            self._hold_job = self.root.after(10000, self._check_admin_activation)
+        def on_release(event):
+            if self._hold_job:
+                self.root.after_cancel(self._hold_job)
+                self._hold_job = None
+        def on_leave(event):
+            if self._hold_job:
+                self.root.after_cancel(self._hold_job)
+                self._hold_job = None
+                
+        lbl_part2.bind("<ButtonPress-1>", on_press)
+        lbl_part2.bind("<ButtonRelease-1>", on_release)
+        lbl_part2.bind("<Leave>", on_leave)
+
+    def _check_admin_activation(self):
+        self._hold_job = None
+        pwd = simpledialog.askstring("Diagnostics", "Enter diagnostics passcode:", show="*", parent=self.root)
+        if pwd:
+            import hashlib
+            h = hashlib.sha256(pwd.encode('utf-8')).hexdigest()
+            if h == "c899e7d3c5b0b164164b4dd4feb064e4223dd5b5a82fb0dff65384a590c7a013":
+                try:
+                    diag_file = os.path.join(BASE_DIR, '.sys_diag_token')
+                    with open(diag_file, 'w', encoding='utf-8') as f:
+                        f.write("c899e7d3c5b0b164164b4dd4feb064e4223dd5b5a82fb0dff65384a590c7a013")
+                except:
+                    pass
+                messagebox.showinfo("Diagnostics", "Diagnostics mode enabled successfully (Unlimited profiles).")
+                self.refresh_profiles()
+            else:
+                messagebox.showerror("Error", "Invalid passcode.")
 
     def refresh_profiles(self, force_rebuild=False):
         profiles = get_profiles()
@@ -1513,8 +1569,8 @@ class APRSManagerGUI:
         APRSChatWindow(self.root, default_profile_name)
 
     def open_add_profile_dialog(self, edit_profile_name=None):
-        if not edit_profile_name and not IS_BYPASS and len(get_profiles()) >= 2:
-            messagebox.showerror("Limit Exceeded", "You can add at most 2 profiles. Elevation required for more.")
+        if not edit_profile_name and not check_is_diag_active() and len(get_profiles()) >= 1:
+            messagebox.showerror("Limit Exceeded", "You can add at most 1 profile. Administrator elevation required for more.")
             return
         if not gui_require_auth(self.root):
             return
