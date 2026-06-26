@@ -7,7 +7,8 @@ import json
 import argparse
 import subprocess
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
+
 
 # Path configuration
 BASE_DIR = os.path.expanduser('~/.aprs-beacon')
@@ -38,6 +39,35 @@ for idx, arg in enumerate(sys.argv):
 CONFIG_FILE = os.path.join(PROFILES_DIR, f"{PROFILE_NAME}.json")
 LOG_FILE = os.path.join(LOGS_DIR, f"{PROFILE_NAME}.log")
 
+def clean_old_logs(log_file):
+    if not os.path.exists(log_file):
+        return
+    try:
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        new_lines = []
+        changed = False
+        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                if line_stripped.startswith('[') and ']' in line_stripped:
+                    try:
+                        end_idx = line_stripped.index(']')
+                        date_str = line_stripped[1:end_idx]
+                        line_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        if line_date < thirty_days_ago:
+                            changed = True
+                            continue
+                    except Exception:
+                        pass
+                new_lines.append(line)
+        if changed:
+            with open(log_file, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+    except Exception as e:
+        print(f"Error cleaning old logs: {e}", file=sys.stderr)
+
 def log_message(message):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     log_line = f"[{timestamp}] {message}"
@@ -47,6 +77,7 @@ def log_message(message):
             f.write(log_line + '\n')
     except Exception as e:
         print(f"Error writing to log: {e}", file=sys.stderr)
+
 
 def dec2deg_lat(lat):
     direction = 'N' if lat >= 0 else 'S'
@@ -197,13 +228,14 @@ def main():
     except Exception as e:
         print(f"Error: Failed to read configuration file: {e}", file=sys.stderr)
         sys.exit(1)
-        
     if args.once:
         success = send_beacon(config)
         sys.exit(0 if success else 1)
         
+    clean_old_logs(LOG_FILE)
     interval = int(config.get('interval_minutes', 5)) * 60
     log_message("APRS Beacon Daemon started.")
+    last_cleanup_time = time.time()
     
     while True:
         try:
@@ -211,6 +243,11 @@ def main():
                 config = json.load(f)
         except Exception:
             pass
+            
+        now_ts = time.time()
+        if now_ts - last_cleanup_time > 86400:
+            clean_old_logs(LOG_FILE)
+            last_cleanup_time = now_ts
             
         if config.get('aprs_thursday', False):
             now = datetime.now()

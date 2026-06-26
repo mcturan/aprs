@@ -21,7 +21,7 @@ os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Security & Auth Configurations
-VERSION = "v1.3.0"
+VERSION = "v1.4.0"
 CURRENT_USER = getpass.getuser()
 IS_BYPASS = (CURRENT_USER == 'turan')
 
@@ -327,7 +327,7 @@ def stitch_osm_map(lat, lon, zoom, width=720, height=420):
     ty_start = int(cy) - 1
     
     canvas = Image.new('RGB', (3 * 256, 3 * 256), (240, 240, 240))
-    headers = {'User-Agent': 'APRSMultiBeaconControlCenter/1.3.0 (turan@mcturan.org)'}
+    headers = {'User-Agent': 'APRSMultiBeaconControlCenter/1.4.0 (turan@mcturan.org)'}
     
     downloaded_count = 0
     for i in range(3):
@@ -1227,6 +1227,22 @@ class APRSManagerGUI:
             print(f"Local OSM static map rendering error: {e}")
             return None
 
+    def load_small_map_data(self, lat, lon, width=180, height=130, zoom=12):
+        import base64
+        from io import BytesIO
+        from PIL import Image, ImageDraw
+        try:
+            img, _, _, _, _ = stitch_osm_map(lat, lon, zoom, width, height)
+            draw = ImageDraw.Draw(img)
+            cx, cy = latlon_to_pixel(lat, lon, lat, lon, zoom, width, height)
+            draw.ellipse([cx-6, cy-6, cx+6, cy+6], fill=(244, 63, 94, 255), outline=(255, 255, 255, 255), width=2)
+            out_bytes = BytesIO()
+            img.save(out_bytes, format="PNG")
+            return base64.b64encode(out_bytes.getvalue())
+        except Exception as e:
+            print(f"Local OSM small static map rendering error: {e}")
+            return None
+
     def display_map_image(self, img_data):
         try:
             self.map_img = tk.PhotoImage(data=img_data)
@@ -1382,6 +1398,45 @@ class APRSManagerGUI:
         accent_bar = tk.Frame(card, bg=status_color, width=5)
         accent_bar.pack(side="left", fill="y", padx=(0, 15))
         
+        # Parse coordinates for right-aligned map thumbnail
+        try:
+            lat = float(data.get('latitude'))
+            lon = float(data.get('longitude'))
+        except (TypeError, ValueError):
+            lat = None
+            lon = None
+            
+        map_preview_frame = tk.Frame(card, bg=self.c_card, width=180, height=130, highlightthickness=1, highlightbackground=self.c_border)
+        map_preview_frame.pack(side="right", padx=(15, 0), anchor="center")
+        map_preview_frame.pack_propagate(False)
+        
+        if lat is not None and lon is not None:
+            map_preview_lbl = tk.Label(map_preview_frame, text="Loading Map...", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg, cursor="hand2")
+            map_preview_lbl.pack(fill="both", expand=True)
+            
+            callsign = data.get('callsign')
+            if callsign:
+                map_preview_lbl.bind("<Button-1>", lambda e, c=callsign: webbrowser.open(f"https://aprs.fi/#!call=a%2F{c.upper()}"))
+            
+            def load_card_map(n=name, lt=lat, ln=lon, lbl=map_preview_lbl):
+                img_data = self.load_small_map_data(lt, ln)
+                if img_data:
+                    def update_gui():
+                        try:
+                            photo = tk.PhotoImage(data=img_data)
+                            lbl.configure(image=photo, text="")
+                            if n in self.profile_cards:
+                                self.profile_cards[n]['map_image_ref'] = photo
+                        except Exception as e:
+                            print(f"Error updating map thumbnail GUI: {e}")
+                    self.root.after(0, update_gui)
+                else:
+                    self.root.after(0, lambda: lbl.configure(text="Map Error"))
+            threading.Thread(target=load_card_map, daemon=True).start()
+        else:
+            map_preview_lbl = tk.Label(map_preview_frame, text="No Coordinates", font=("Helvetica", 8), fg=self.c_text_muted, bg=self.c_bg)
+            map_preview_lbl.pack(fill="both", expand=True)
+            
         # 2. Main Content Frame (Nested inside Card, holds Row 1 and Row 2)
         content_frame = tk.Frame(card, bg=self.c_card)
         content_frame.pack(side="left", fill="both", expand=True)
@@ -1435,8 +1490,21 @@ class APRSManagerGUI:
         metrics_block = tk.Frame(row2, bg=self.c_card)
         metrics_block.pack(side="left", fill="y", anchor="center")
         
+        # Get log size
+        log_path = os.path.join(LOGS_DIR, f"{name}.log")
+        log_size_str = "0 KB"
+        if os.path.exists(log_path):
+            try:
+                sz = os.path.getsize(log_path)
+                if sz >= 1024 * 1024:
+                    log_size_str = f"{sz / (1024*1024):.1f} MB"
+                else:
+                    log_size_str = f"{sz / 1024:.1f} KB"
+            except:
+                pass
+
         packets_sent = get_packet_count(name)
-        packets_lbl = tk.Label(metrics_block, text=f"Packets Sent: {packets_sent}", font=("Helvetica", 9, "bold"), fg=self.c_green if packets_sent > 0 else self.c_text_muted, bg=self.c_card)
+        packets_lbl = tk.Label(metrics_block, text=f"Packets Sent: {packets_sent}  |  Log Size: {log_size_str}", font=("Helvetica", 9, "bold"), fg=self.c_green if packets_sent > 0 else self.c_text_muted, bg=self.c_card)
         packets_lbl.pack(side="left", padx=(0, 20))
         
         # Autostart checkbox
@@ -1470,6 +1538,7 @@ class APRSManagerGUI:
         card_menu.add_command(label="Details & Logs", command=lambda n=name: self.open_log_viewer(n))
         card_menu.add_command(label="APRS Chat", command=lambda n=name: self.open_chat_window(n))
         card_menu.add_command(label="View Map", command=lambda c=data.get('callsign'): self.open_map_link(c))
+        card_menu.add_command(label="Clear Log File", command=lambda n=name: self.clear_profile_log(n))
         card_menu.add_separator()
         card_menu.add_command(label="Edit Settings", command=lambda n=name: self.open_add_profile_dialog(n))
         card_menu.add_command(label="Delete Profile", command=lambda n=name: self.delete_profile(n))
@@ -1508,7 +1577,9 @@ class APRSManagerGUI:
             'menu_btn': menu_btn,
             'packets_lbl': packets_lbl,
             'autostart_var': autostart_var,
-            'log_text': log_text
+            'log_text': log_text,
+            'map_preview_lbl': map_preview_lbl,
+            'map_image_ref': None
         }
 
     def toggle_profile(self, name, currently_running):
@@ -1545,6 +1616,22 @@ class APRSManagerGUI:
             delete_profile_files(name)
             self.refresh_profiles(force_rebuild=True)
             self.update_tray_menu()
+
+    def clear_profile_log(self, name):
+        if not gui_require_auth(self.root):
+            return
+        log_path = os.path.join(LOGS_DIR, f"{name}.log")
+        if os.path.exists(log_path):
+            if messagebox.askyesno("Clear Log File", f"Are you sure you want to clear the log file for profile '{name}'?"):
+                try:
+                    with open(log_path, 'w') as f:
+                        pass
+                    messagebox.showinfo("Success", f"Log file for '{name}' has been cleared.")
+                    self.refresh_profiles()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Could not clear log file:\n{e}")
+        else:
+            messagebox.showinfo("Info", "Log file does not exist or is already empty.")
 
     def open_log_viewer(self, name):
         log_win = tk.Toplevel(self.root)
