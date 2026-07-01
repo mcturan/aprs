@@ -21,7 +21,7 @@ os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Security & Auth Configurations
-VERSION = "v1.4.1"
+VERSION = "v1.4.2"
 CURRENT_USER = getpass.getuser()
 IS_BYPASS = (CURRENT_USER == 'turan')
 
@@ -379,8 +379,13 @@ def get_remote_version():
             match = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', content)
             if match:
                 return match.group(1)
-    except:
-        pass
+    except Exception as e:
+        try:
+            log_file = os.path.join(LOGS_DIR, 'manager_update.log')
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{datetime.now()}] get_remote_version error: {e}\n")
+        except:
+            pass
     return None
 
 def parse_version(version_str):
@@ -394,6 +399,15 @@ def self_update():
     import urllib.request
     import shutil
     
+    log_file = os.path.join(LOGS_DIR, 'manager_update.log')
+    def log_msg(msg):
+        try:
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{datetime.now()}] {msg}\n")
+        except:
+            pass
+
+    log_msg("Checking for git repository...")
     repo_path_file = os.path.join(BASE_DIR, '.repo_path')
     has_git_repo = False
     repo_path = ""
@@ -403,52 +417,58 @@ def self_update():
                 repo_path = f.read().strip()
             if os.path.exists(repo_path) and os.path.exists(os.path.join(repo_path, '.git')):
                 has_git_repo = True
-        except:
-            pass
+        except Exception as e:
+            log_msg(f"Error reading .repo_path: {e}")
 
     if has_git_repo:
+        log_msg(f"Git repository found at {repo_path}. Running git pull...")
         try:
             if not IS_WINDOWS:
                 res = subprocess.run(['git', 'pull'], cwd=repo_path, capture_output=True, text=True)
                 if res.returncode != 0:
+                    log_msg(f"Git pull failed: {res.stderr}")
                     return False, f"Git Pull Error:\n{res.stderr}"
             else:
                 res = subprocess.run(['powershell', '-Command', 'git pull'], cwd=repo_path, capture_output=True, text=True)
                 if res.returncode != 0:
+                    log_msg(f"Git pull failed: {res.stderr}")
                     return False, f"Git Pull Error:\n{res.stderr}"
             
-            stdout_lower = res.stdout.lower()
-            if "already up to date" in stdout_lower or "already up-to-date" in stdout_lower or "zaten güncel" in stdout_lower:
-                return True, "Already up-to-date."
-                
+            log_msg("Git pull completed. Copying files to BASE_DIR...")
             shutil.copy2(os.path.join(repo_path, 'aprs_beacon.py'), os.path.join(BASE_DIR, 'aprs_beacon.py'))
             shutil.copy2(os.path.join(repo_path, 'aprs_manager.py'), os.path.join(BASE_DIR, 'aprs_manager.py'))
+            log_msg("Files copied successfully.")
             return True, "Application updated successfully! Please close and reopen the app to apply changes."
         except Exception as e:
+            log_msg(f"Git update exception: {e}")
             return False, f"Update Error: {e}"
     else:
-        # Update directly from GitHub
+        log_msg("No git repository. Downloading files directly from GitHub...")
         try:
             beacon_url = "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_beacon.py"
             manager_url = "https://raw.githubusercontent.com/mcturan/aprs/main/aprs_manager.py"
             headers = {'User-Agent': 'Mozilla/5.0'}
             
             # Download new beacon
+            log_msg("Downloading aprs_beacon.py...")
             req = urllib.request.Request(beacon_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as response:
                 beacon_code = response.read()
                 
             # Download new manager
+            log_msg("Downloading aprs_manager.py...")
             req = urllib.request.Request(manager_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as response:
                 manager_code = response.read()
             
             if b"def " not in beacon_code or b"def " not in manager_code:
+                log_msg("Download error: Invalid response content.")
                 return False, "Failed to download updates: Invalid response content."
             
             beacon_path = os.path.join(BASE_DIR, 'aprs_beacon.py')
             manager_path = os.path.join(BASE_DIR, 'aprs_manager.py')
             
+            log_msg("Writing files to BASE_DIR...")
             with open(beacon_path, 'wb') as f:
                 f.write(beacon_code)
             with open(manager_path, 'wb') as f:
@@ -458,8 +478,10 @@ def self_update():
                 os.chmod(beacon_path, 0o755)
                 os.chmod(manager_path, 0o755)
                 
+            log_msg("Files written and permissions set successfully.")
             return True, "Application updated successfully from GitHub! Please close and reopen the app to apply changes."
         except Exception as e:
+            log_msg(f"Direct download exception: {e}")
             return False, f"Update Error (GitHub): {e}"
 
 def export_settings(export_file_path):
