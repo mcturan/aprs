@@ -21,7 +21,7 @@ os.makedirs(PROFILES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Security & Auth Configurations
-VERSION = "v1.4.0"
+VERSION = "v1.4.1"
 CURRENT_USER = getpass.getuser()
 IS_BYPASS = (CURRENT_USER == 'turan')
 
@@ -134,6 +134,11 @@ WorkingDirectory={BASE_DIR}
 WantedBy=default.target
 """
     try:
+        if os.path.exists(template_path):
+            with open(template_path, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+            if existing_content == service_content:
+                return
         with open(template_path, 'w', encoding='utf-8') as f:
             f.write(service_content)
         subprocess.run(['systemctl', '--user', 'daemon-reload'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -142,7 +147,6 @@ WantedBy=default.target
 
 def is_profile_running(profile_name):
     if IS_LINUX:
-        ensure_linux_systemd_template()
         res = subprocess.run(['systemctl', '--user', 'is-active', f'aprs-beacon@{profile_name}.service'], capture_output=True, text=True)
         return res.stdout.strip() == 'active'
     elif IS_WINDOWS:
